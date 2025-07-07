@@ -141,5 +141,5 @@ Use these tips and instructions to craft the perfect prompt for a 5 second video
 
 # Run and print result
 if __name__ == "__main__":
-    prompt = generate_prompt(model="mistral", scene_description=act_1)
+    prompt = generate_prompt(model="llama2:7b-chat", scene_description=act_1)
     print(prompt)
