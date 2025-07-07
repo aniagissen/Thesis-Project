@@ -1,62 +1,23 @@
 import ollama
 
-def generate_prompt(model="llama2:7b-chat", scene_description=""):
+def generate_prompt(model="mistral", scene_description=""):
     prompt = f"""
-You write the most specific and highly detailed prompt for Hunyuan model in ComfyUI. These videos are for scientific educational purposes.
-They include: 
-Subject - Define Your Star.
-Must clearly specify the main focus of your video.
-Examples:
-"A young woman with flowing red hair"
-"A sleek electric sports car"
-"A majestic eagle in flight"
+    You are an expert prompt engineer for ComfyUI using the Hunyuan video model specialized in generating cartoon style videos with a strong medical or scientific theme
 
-Scene - Set Your Stage.
-Describe the environment where your action takes place.
-Examples:
-"In a neon-lit cyberpunk cityscape"
-"Amidst a snow-covered forest at dawn"
-"Inside a minimalist modern apartment"
+    Produce a single highly detailed paragraph approximately 100 to 300 words that integrates all of the following elements seamlessly
 
-Motion - Bring Life to Your Video.
-Detail how your subject moves or interacts.
-Examples:
-"Gracefully dancing through falling autumn leaves"
-"Rapidly accelerating along a coastal highway"
-"Smoothly transitioning between yoga poses"
+    Subject Clearly define the main focus of the scene ensuring it is directly tied to a medical or scientific concept
+    Scene or Environment Describe the setting vividly with illustrative cartoon details that convey a scientific or clinical context such as labs anatomical environments cellular landscapes or futuristic medical facilities
+    Motion or Action Detail how the subject moves or interacts in a dynamic way appropriate for a short animated clip
+    Camera Movement Specify how the camera captures this action with pans tilts or tracking shots to enhance the educational focus
+    Atmosphere and Mood Set an emotionally engaging tone that underscores the importance of medical discovery or scientific wonder
+    Lighting Explain how light shapes the mood and highlights key anatomical or clinical features
+    Shot Composition Ensure visual balance and interest describing angles and framing that emphasize the scientific theme
 
-Camera Movement - Direct Your Shot.
-Specify how the camera should capture the action.
-Examples:
-"Slow upward tilt revealing the cityscape"
-"Smooth tracking shot following the subject"
-"Dramatic circular pan around the scene"
+    The output must be in one continuous cinematic style paragraph with no line breaks subtitles or lists It must use evocative descriptive language and maintain a consistent cartoon style with a clear medical or scientific context regardless of the input
 
-Atmosphere - Create the Right Mood.
-Set the emotional tone of your video.
-Examples:
-"Mysterious and ethereal atmosphere"
-"Energetic and vibrant mood"
-"Calm and serene ambiance"
-
-Lighting - Perfect Your Illumination.
-Define how light shapes your scene.
-Examples:
-"Soft, warm sunlight filtering through trees"
-"Sharp, contrasting shadows from street lights"
-"Diffused, ethereal glow from above"
-
-Shot Composition - Frame Your Vision.
-Describe how elements should be arranged.
-Examples:
-"Close-up shot focusing on emotional expression"
-"Wide landscape shot emphasizing scale"
-"Low-angle shot creating dramatic perspective"
-
-Remember: The video is only 5 seconds, so create a well-structured prompt of about 100-300 words, no subtitles or newlines. Describe subject, scene, action, camera, mood and lighting in one flowing paragraph. Keep it visually consistent and use strong evocative language. 
-
-Use these instructions to craft the perfect prompt for this brief: {scene_description}
-"""
+    Use these instructions to craft the perfect video prompt based on this brief {scene_description}
+    """
 
     response = ollama.chat(
         model=model,
@@ -65,7 +26,6 @@ Use these instructions to craft the perfect prompt for this brief: {scene_descri
     return response['message']['content']
 
 
-# Only runs if you execute `python Ollama.py` directly in the terminal
 if __name__ == "__main__":
     print("Please briefly and clearly describe what you imagine from act 1 of this scene")
     act_1 = input("\nScene Description: ")
