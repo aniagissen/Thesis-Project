@@ -5,12 +5,12 @@ import numpy as np
 import cv2
 from comfy.nodes import NODE_CLASS_MAPPINGS
 
-class MedicalReferenceSelectorNode:
+class MedicalImageReference:
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "folder_path": ("STRING", {"default": "./medical_bank"}),
+                "folder_path": ("STRING", {"default": "./medical_image_reference_bank"}),
                 "keyword": ("STRING", {"default": "neuron"}),
                 "edge_enhance": ("BOOLEAN", {"default": False}),
                 "color_boost": ("BOOLEAN", {"default": False}),
@@ -40,7 +40,7 @@ class MedicalReferenceSelectorNode:
         img = Image.open(matched_file).convert("RGB")
         img_np = np.array(img)
 
-        # Optional preprocessing
+        # Preprocessing
         if edge_enhance:
             edges = cv2.Canny(img_np, 100, 200)
             img_np = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
