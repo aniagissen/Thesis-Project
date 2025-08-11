@@ -36,7 +36,7 @@ def generate_prompt(model="mistral", scene_description=""):
     return response['message']['content']
 
 
-# Generate filename based on timestamp
+# make filename based on timestamp
 timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 MASTER_PROMPT_FILE = f"all_prompts_{timestamp}.txt"
 
@@ -47,7 +47,7 @@ num_scenes = st.number_input("How many scenes?", min_value=1, step=1)
 for scene_num in range(1, num_scenes + 1):
     st.subheader(f"Scene {scene_num}")
 
-    # Create folders
+    #create folders
     scene_path = os.path.join(SCENE_ROOT, f"scene_{scene_num}")
     prompt_scene_path = os.path.join(PROMPT_ROOT, f"scene_{scene_num}")
     os.makedirs(scene_path, exist_ok=True)
