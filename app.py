@@ -2,6 +2,8 @@ from datetime import datetime
 from pathlib import Path
 import json
 import streamlit as st
+import subprocess
+import sys
 
 from config import ensure_roots, init_session_state, ROOT_SCENES, ROOT_PROMPTS
 from storage import ensure_scene_dirs, save_json, append_jsonl, load_json
@@ -177,14 +179,72 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Couldn't build prompts.txt: {e}")
 
-    # ZIP export for Scenes/ and Prompts/
+        # ZIP export for Scenes/ and Prompts/
     with st.expander("Export Scenes/ and Prompts/ as a ZIP"):
         if st.button("Create ZIP"):
             sid = st.session_state.get("session_timestamp", "session_default")
             data = create_export_zip(ROOT_SCENES / sid, ROOT_PROMPTS / sid)
             st.download_button(label="Download export.zip", data=data, file_name="export.zip", mime="application/zip")
 
+    # ---- Run batch in ComfyUI ----
+    with st.expander("Run batch in ComfyUI"):
+        sid = st.session_state.get("session_timestamp", "session_default")
+        default_prefix = f"Batch_{sid}"
+        # Prefer flexible timestamped runner; fallback to canonical name
+        default_batch = "run_batch_comfy 13.53.55.py"
+        try:
+            from pathlib import Path as _P
+            if not _P(default_batch).exists() and _P("run_batch_comfy.py").exists():
+                default_batch = "run_batch_comfy.py"
+        except Exception:
+            pass
+
+        batch_script = st.text_input("Batch script path", value=default_batch)
+        workflow_path = st.text_input("Workflow JSON path", value="")
+        server_url = st.text_input("ComfyUI server URL", value="http://127.0.0.1:8188")
+        prefix = st.text_input("Filename prefix", value=default_prefix)
+        title_filter = st.text_input("CLIP node title filter", value="Positive Prompt")
+        wait_done = st.checkbox("Wait for each job to complete", value=True)
+        add_cli_suffix = st.checkbox("Add/override style suffix at batch time", value=False)
+        cli_suffix = st.text_area("Batch-time suffix (optional)", value="", disabled=not add_cli_suffix)
+        max_words_cli = st.number_input("Max words at batch time (0 = no trim)", min_value=0, max_value=200, value=0, step=5)
+
+        run_clicked = st.button("▶️ Run batch now")
+        if run_clicked:
+            if not master_file.exists():
+                st.error("Master JSONL not found. Generate at least one prompt first.")
+            elif not workflow_path:
+                st.error("Please provide a Workflow JSON path.")
+            else:
+                args = [sys.executable, str(batch_script),
+                        "--workflow", str(workflow_path),
+                        "--jsonl", str(master_file),
+                        "--server", server_url,
+                        "--prefix", prefix,
+                        "--title-filter", title_filter]
+                if wait_done:
+                    args.append("--wait")
+                if add_cli_suffix and cli_suffix.strip():
+                    args.extend(["--suffix", cli_suffix.strip()])
+                if max_words_cli and int(max_words_cli) > 0:
+                    args.extend(["--max-words", str(int(max_words_cli))])
+
+                try:
+                    proc = subprocess.run(args, capture_output=True, text=True, check=False)
+                    st.code(proc.stdout or "(no stdout)", language="bash")
+                    if proc.stderr:
+                        st.code(proc.stderr, language="bash")
+                    if proc.returncode == 0:
+                        st.success("Batch command finished (return code 0). Check ComfyUI outputs.")
+                    else:
+                        st.warning(f"Batch command exited with code {proc.returncode}. See logs above.")
+                except FileNotFoundError:
+                    st.error("Could not launch Python or the batch script. Check the paths.")
+                except Exception as e:
+                    st.error(f"Batch run error: {e}")
+
     st.caption("Tip: Each act only generates on button click. Existing prompts are preserved unless you enable overwrite.")
+
 
 if __name__ == "__main__":
     main()
