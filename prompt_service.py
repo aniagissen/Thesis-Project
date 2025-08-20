@@ -4,6 +4,7 @@ def generate_prompt(model: str, system_msg: str, act_desc: str, *, temperature: 
     except Exception as e:
         raise RuntimeError("Unable to import 'ollama'. Ensure Ollama is installed and the Python package is available.") from e
 
+# System instructions
     messages = [
         {"role": "system", "content": system_msg.strip()},
         {"role": "user", "content": (
@@ -12,7 +13,7 @@ def generate_prompt(model: str, system_msg: str, act_desc: str, *, temperature: 
             "Constraints:\n"
             "- Output exactly one sentence (max ~80 words).\n"
             "- Only describe the visuals wanted, clearly and with no fluff.\n"
-            "- Include 1–2 adjectives, a clear action, and specific environment cues.\n"
+            "- Include 1 adjective, a clear action, and specific environment cues.\n"
             "- Prefer concrete nouns over abstractions.\n"
             "- No scene numbers, bullet points, or quotes."
         )},
