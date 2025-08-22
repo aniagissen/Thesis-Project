@@ -1,17 +1,17 @@
-#!/usr/bin/env python3
 """
 Batch-run a ComfyUI workflow for each prompt in a JSONL file.
 
 Usage:
   python run_batch_comfy.py --workflow Hunyuan_API.json --jsonl all_prompts.jsonl \
-      --server http://127.0.0.1:8000 --prefix MyBatch --wait
+      --server http://127.0.0.1:8188 --prefix MyBatch --wait
 """
 import argparse, json, time, uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
 
-# ---------- IO ----------
+# Input/Output helpers
+# Reads JSONL and checks each line is compatible
 def iter_jsonl_records(path: Path, key: str = "generated_prompt") -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
@@ -24,13 +24,14 @@ def iter_jsonl_records(path: Path, key: str = "generated_prompt") -> List[Dict[s
             except json.JSONDecodeError:
                 raise RuntimeError(f"Line {i} in {path} is not valid JSONL.")
             if key not in obj or not str(obj[key]).strip():
-                # allow single-field JSONL
+                # allow single-field JSONL, stores final text to '_text'
                 if len(obj) == 1:
                     v = next(iter(obj.values()))
                     if v:
                         obj['_text'] = str(v).strip()
                         records.append(obj)
                         continue
+                # Shows errors
                 raise RuntimeError(f"Line {i} missing '{key}' field.")
             obj['_text'] = str(obj[key]).strip()
             records.append(obj)
@@ -42,12 +43,14 @@ def load_workflow(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
-# ---------- Workflow helpers (API + UI) ----------
+# Workflow helpers for API and JSON
+# Registers the workflow being an API
 def is_api_prompt(workflow: Dict[str, Any]) -> bool:
     return isinstance(workflow, dict) and "nodes" not in workflow and all(
         isinstance(v, dict) and ("class_type" in v and "inputs" in v) for v in workflow.values()
     )
 
+# Locates nodes in workflow
 def find_node(workflow: Dict[str, Any], type_name: str, title_contains: Optional[str] = None) -> Dict[str, Any]:
     if is_api_prompt(workflow):
         candidates = []
@@ -69,6 +72,7 @@ def find_node(workflow: Dict[str, Any], type_name: str, title_contains: Optional
             raise RuntimeError(f"No node found with type={type_name!r} and title containing {title_contains!r}.")
         return sorted(candidates, key=lambda x: x.get("id", 1_000_000))[0]
 
+# Sends users prompt into the CLIP text node
 def set_clip_text(workflow: Dict[str, Any], node: Dict[str, Any], text: str) -> None:
     if is_api_prompt(workflow):
         node.setdefault("inputs", {})["text"] = text
@@ -78,6 +82,7 @@ def set_clip_text(workflow: Dict[str, Any], node: Dict[str, Any], text: str) -> 
             raise RuntimeError("UI CLIPTextEncode node has unexpected shape.")
         w[0] = text
 
+# Edits the output name in VHSvideoCombine node
 def set_video_prefix(workflow: Dict[str, Any], prefix: str) -> None:
     if is_api_prompt(workflow):
         for n in workflow.values():
@@ -93,6 +98,7 @@ def set_video_prefix(workflow: Dict[str, Any], prefix: str) -> None:
         if isinstance(w, dict):
             w["filename_prefix"] = prefix
 
+# Override helpers
 def set_scheduler_steps(workflow: Dict[str, Any], steps: Optional[int]) -> None:
     if steps is None: return
     if is_api_prompt(workflow):
@@ -141,7 +147,7 @@ def set_video_params(workflow: Dict[str, Any], fps: Optional[int], fmt: Optional
         except Exception:
             pass
 
-# ---------- ComfyUI HTTP ----------
+# ComfyUI HTTP
 def queue_prompt(server: str, workflow: Dict[str, Any], client_id: str) -> str:
     url = f"{server.rstrip('/')}/prompt"
     payload = {"prompt": workflow, "client_id": client_id}
@@ -153,6 +159,7 @@ def queue_prompt(server: str, workflow: Dict[str, Any], client_id: str) -> str:
         raise RuntimeError(f"Unexpected /prompt response: {data}")
     return pid
 
+# Provides update when status is completed, or there is an error
 def wait_for_completion(server: str, prompt_id: str, poll_s: float = 2.0, timeout_s: int = 3600) -> Dict[str, Any]:
     base = server.rstrip("/")
     start = time.time()
@@ -171,12 +178,11 @@ def wait_for_completion(server: str, prompt_id: str, poll_s: float = 2.0, timeou
             raise TimeoutError(f"Timeout waiting for job {prompt_id}.")
         time.sleep(poll_s)
 
-# ---------- Main ----------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--workflow", required=True, type=Path, help="ComfyUI workflow JSON (API format preferred)")
     ap.add_argument("--jsonl", required=True, type=Path, help="App-produced JSONL (needs 'generated_prompt')")
-    ap.add_argument("--server", default="http://127.0.0.1:8000", help="ComfyUI server URL")
+    ap.add_argument("--server", default="http://127.0.0.1:8188", help="ComfyUI server URL")
     ap.add_argument("--prefix", default="Batch", help="Filename prefix for outputs")
     ap.add_argument("--wait", action="store_true", help="Wait for each job to complete and print outputs")
     ap.add_argument("--title-filter", default="Positive Prompt", help="Title substring to match the CLIP text node")
@@ -191,8 +197,12 @@ def main():
     ap.add_argument("--fps", type=int, default=None, help="Override VHS_VideoCombine frame_rate")
     ap.add_argument("--format", type=str, default=None, help="Override VHS_VideoCombine format (e.g., video/nvenc_h264-mp4)")
     ap.add_argument("--seed", type=int, default=None, help="Override RandomNoise noise_seed (0=random)")
+    # status bar
+    parser.add_argument("--client_id", dest="client", default=None,
+                        help+"Client UUID used for WebSocket filtering.")
     args = ap.parse_args()
 
+    # Check workflow and JSON exist
     if not args.workflow.exists():
         raise SystemExit(f"Workflow not found: {args.workflow}")
     if not args.jsonl.exists():
@@ -201,13 +211,18 @@ def main():
     records = iter_jsonl_records(args.jsonl)
     base_workflow = load_workflow(args.workflow)
 
+    # Generate UUID and print jobs
     client_id = str(uuid.uuid4())
     print(f"Using client_id={client_id}")
     print(f"Queuing {len(records)} jobs to {args.server}")
 
+    # Setting client id for status bar
+    client_id = args.client_id or str(uuid.uuid4())
+    print(f"[client] {client_id}", flush=True)
+
     for i, rec in enumerate(records, 1):
         prompt_text = str(rec.get('_text', '')).strip()
-        # optional suffix and budget (simple, no protect here because app already does it)
+        # optional suffix and budget
         if args.suffix:
             if not prompt_text.endswith(('.', '!', '?')):
                 prompt_text = prompt_text.rstrip() + "."
@@ -220,13 +235,17 @@ def main():
                 if not prompt_text.endswith(('.', '!', '?')):
                     prompt_text += "."
 
-        wf = json.loads(json.dumps(base_workflow))  # deep copy
+        # Deep copy base workflow so each batch starts from the same template
+        wf = json.loads(json.dumps(base_workflow))  
+        # Find CLIP node and set text
         clip_node = find_node(wf, "CLIPTextEncode", title_contains=args.title_filter)
         set_clip_text(wf, clip_node, prompt_text)
         scene = rec.get("scene")
         act = rec.get("act")
         created = rec.get("created_at")
         dt_date = dt_time = None
+        
+        # Set file name
         if isinstance(created, str):
             try:
                 from datetime import datetime as _dt

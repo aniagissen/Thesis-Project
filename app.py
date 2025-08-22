@@ -14,57 +14,76 @@ from ui_sidebar import render_sidebar
 from ui import act_description_input, show_existing_prompt, act_action_buttons, show_generated_output
 from text_utils import ensure_suffix, enforce_word_budget
 
+import uuid
+import threading
+import queue
+import time
+from typing import Dict, Any
+try: 
+    import websocket
+except Exception:
+    websocket = None
+
+# System prompt sent to llama
 DEFAULT_SYSTEM = (
-    "You are a prompt engineer generating cinematic, production-ready video prompts "
+    "You are a prompt engineer generating clean and clear video prompts  "
     "for the Hunyuan text-to-video model in ComfyUI. Each output must be a single, "
-    "concise paragraph (2–4 sentences) describing the shot with strong visual nouns, "
-    "active verbs, camera movement, lens/composition, time of day, lighting, environment, "
-    "mood, and color palette. Avoid exposition and meta-notes. No numbering, no lists, "
-    "no quotes. Use present tense. British English."
+    "concise sentence, describing the shot with a clear visual description of  "
+    "the scene. Avoid exposition and meta-notes. No numbering, no lists, no  "
+    "quotes. Use present tense, and British English."
 )
 
+# Entry log to build and run UI
 def main() -> None:
-    ensure_roots()
-    master_file = init_session_state()
+    ensure_roots() # Locates root folders
+    master_file = init_session_state() # Sets up session logs
 
-    st.title("🎬 Prompt Builder – Streamlit + Ollama (modular)")
+    st.title("Biomations Prompt Builder")
     st.caption(f"Master file for this session: **{master_file.name}** → saved in `{master_file.parent}`")
-
+    
+    # Set up and render interactive sidebar options
     with st.sidebar:
         settings = render_sidebar(DEFAULT_SYSTEM)
 
+    # Clears streamlit and runs fresh script
     if settings["reset_clicked"]:
         st.session_state.clear()
         st.experimental_rerun()
 
+    # Reads default from settings and 
     scenes_count = settings["scenes_count"]
     acts_per_scene = settings["acts_per_scene"]
 
+    # Makes/finds folders for scenes and prompts
     for scene_idx in range(1, int(scenes_count) + 1):
         st.subheader(f"Scene {scene_idx}")
         scene_dir, prompt_dir = ensure_scene_dirs(scene_idx)
 
         for act_idx in range(1, int(acts_per_scene[scene_idx]) + 1):
             st.markdown(f"**Act {act_idx}**")
-            act_desc = act_description_input(scene_idx, act_idx)
+            act_desc = act_description_input(scene_idx, act_idx) # Text box for user inputting prompt per act per scene
 
+            # Two file paths for saving outputs
             raw_txt_path = scene_dir / f"act_{act_idx}.txt"
             json_path = prompt_dir / f"act_{act_idx}.json"
 
+            # In case of propmt existing, find and display it
             existing = load_json(json_path)
             show_existing_prompt(existing, scene_idx, act_idx)
 
+            # Show raw act text
             gen_clicked, show_raw = act_action_buttons(scene_idx, act_idx)
             if show_raw:
                 st.code(act_desc or "(empty)")
 
             if gen_clicked:
+                # Back up in case no text is entered when pressing 'Generate'
                 if not act_desc or not act_desc.strip():
                     st.warning("Please enter a description before generating.")
                     st.stop()
-
+                # Back up if prompt has already been genereated. Instructions for how to override
                 if json_path.exists() and not settings["overwrite_ok"]:
-                    st.info("Prompt already exists for this act. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
+                    st.info("A prompt already exists for this act. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
                 else:
                     try:
                         raw_txt_path.write_text(act_desc.strip() + "\n", encoding="utf-8")
@@ -84,15 +103,18 @@ def main() -> None:
                         st.error(str(e))
                         st.stop()
 
+                    # Apply style suffix to end
                     applied = False
                     if settings.get("enable_suffix"):
                         prompt_text, applied = ensure_suffix(prompt_text, settings.get("suffix_text", ""))
                     trimmed = False
+                    # protects style suffix is prompt is too long
                     if settings.get("max_words"):
                         prompt_text, trimmed = enforce_word_budget(
                             prompt_text, int(settings.get("max_words")), protect_suffix=(settings.get("suffix_text") if settings.get("enable_suffix") else None)
                         )
 
+                    # Records everything
                     record = {
                         "scene": scene_idx,
                         "act": act_idx,
@@ -106,6 +128,7 @@ def main() -> None:
                         "paths": {"raw": str(raw_txt_path), "json": str(json_path), "master": str(master_file)},
                     }
 
+                    # Write the JSON file and stick on the master JSONL
                     try:
                         save_json(json_path, record)
                         append_jsonl(master_file, record)
@@ -113,17 +136,18 @@ def main() -> None:
                         st.error(f"Failed to save outputs: {e}")
                         st.stop()
 
+                    # Confidence check
                     st.success("Prompt generated and saved.")
                     show_generated_output(prompt_text, scene_idx, act_idx)
 
         st.divider()
 
-    # JSONL download
+    # If JSONL was created successfully, option to download it
     if master_file.exists():
         try:
             master_text = master_file.read_text(encoding="utf-8")
             st.download_button(
-                label="⬇️ Download master prompts (JSONL)",
+                label="Download master prompts (JSONL)",
                 data=master_text,
                 file_name=master_file.name,
                 mime="application/jsonl",
@@ -131,7 +155,8 @@ def main() -> None:
         except Exception as e:
             st.error(f"Couldn't read master file: {e}")
 
-    # TXT export (one prompt per line)
+
+    # Create .txt file from the master JSONL ('generated_prompt')
     if master_file.exists():
         with st.expander("Export prompts.txt (one per line)"):
             dedupe = st.checkbox("Dedupe by scene+act (keep latest)", value=True)
@@ -173,7 +198,7 @@ def main() -> None:
                         out_text = "\n".join(txt for (_ln, _sc, _ac, txt) in lines) + ("\n" if lines else "")
 
                     st.download_button(
-                        label="⬇️ Download prompts.txt (one per line)",
+                        label="Download prompts.txt (one per line)",
                         data=out_text,
                         file_name="prompts.txt",
                         mime="text/plain",
@@ -181,46 +206,50 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Couldn't build prompts.txt: {e}")
 
-    # ZIP export for Scenes/ and Prompts/
+    # Option for ZIP export for Scenes/ and Prompts/
     with st.expander("Export Scenes/ and Prompts/ as a ZIP"):
         if st.button("Create ZIP"):
             data = create_export_zip(ROOT_SCENES, ROOT_PROMPTS)
-            st.download_button(label="⬇️ Download export.zip", data=data, file_name="export.zip", mime="application/zip")
+            st.download_button(label="Download export.zip", data=data, file_name="export.zip", mime="application/zip")
 
     
-    # ---- Run batch in ComfyUI ----
-    with st.expander("Run batch in ComfyUI"):
+    # Funtion to bacth run the promts in  ComfyUI
+    with st.expander("Batch run prompts in ComfyUI"):
         sid = st.session_state.get("session_timestamp", "session_default")
         default_prefix = f"Batch_{sid}"
 
-        # Prefer canonical runner
+        # Takes set scripts unless input changes
         default_batch = "run_batch_comfy.py"
         try:
             from pathlib import Path as _P
             if _P("run_batch_comfy.py").exists():
                 default_batch = "run_batch_comfy.py"
-            elif _P("run_batch_comfy 13.53.55.py").exists():
-                default_batch = "run_batch_comfy 13.53.55.py"
+            elif _P("run_batch_comfy.py").exists():
+                default_batch = "run_batch_comfy.py"
         except Exception:
             pass
 
+        # Inputs needed
         batch_script = st.text_input("Batch script path", value=default_batch)
-        workflow_path = st.text_input("Workflow JSON path (API format preferred)", value="")
-        server_url = st.text_input("ComfyUI server URL", value="http://127.0.0.1:8000")
+        workflow_path = st.text_input("Workflow JSON path (API format)", value="")
+        server_url = st.text_input("ComfyUI server URL", value="http://127.0.0.1:8188")
         prefix = st.text_input("Filename prefix", value=default_prefix)
         title_filter = st.text_input("CLIP node title filter", value="Positive Prompt")
 
+        # Option to either send prompts one by one (to test) or send them all at once
         wait_done = st.checkbox("Wait for each job to complete", value=True)
         add_cli_suffix = st.checkbox("Add/override style suffix at batch time", value=False)
         cli_suffix = st.text_area("Batch-time suffix (optional)", value="", disabled=not add_cli_suffix)
         max_words_cli = st.number_input("Max words at batch time (0 = no trim)", min_value=0, max_value=200, value=0, step=5)
 
+
         c1, c2 = st.columns(2)
+        # Sends the prompts!
         with c1:
             run_clicked = st.button("Run batch prompts now", use_container_width=True)
+        # ComfyUI browser has to already be running, test options
         with c2:
-            test_clicked = st.button("🔎 Test ComfyUI server", use_container_width=True)
-
+            test_clicked = st.button("Test ComfyUI is running", use_container_width=True)
         if test_clicked:
             try:
                 import requests
@@ -232,65 +261,202 @@ def main() -> None:
 
         
         status_box = st.empty()  # status indicator
+
         if run_clicked:
+
             if not master_file.exists():
                 st.error("Master JSONL not found. Generate at least one prompt first.")
+
             elif not workflow_path:
                 st.error("Please provide a Workflow JSON path.")
+
             else:
-                status_box.info("🎥 Generating videos...")
+                # Allow saving the stdout log like before
+                save_logs = st.checkbox("Save logs to this session", value=True,
+                                        help="Writes batch_log.txt into the session's Prompts folder.")
+
+                # Build command but inject a shared client_id for WS filtering
+                client_id = str(uuid.uuid4())
+
                 args = [sys.executable, "-u", str(batch_script),
                         "--workflow", str(workflow_path),
                         "--jsonl", str(master_file),
                         "--server", server_url,
                         "--prefix", prefix,
-                        "--title-filter", title_filter]
+                        "--title-filter", title_filter,
+                        "--client-id", client_id]  
+
                 if wait_done:
                     args.append("--wait")
+
                 if add_cli_suffix and cli_suffix.strip():
                     args.extend(["--suffix", cli_suffix.strip()])
+
                 if max_words_cli and int(max_words_cli) > 0:
                     args.extend(["--max-words", str(int(max_words_cli))])
 
-                # Pass overrides from sidebar if user enabled them
                 try:
                     if settings.get("override_params"):
+
                         if settings.get("steps") is not None:
                             args.extend(["--steps", str(int(settings["steps"]))])
+
                         if settings.get("guidance") is not None:
                             args.extend(["--guidance", str(float(settings["guidance"]))])
+
                         if settings.get("width") is not None:
                             args.extend(["--width", str(int(settings["width"]))])
+
                         if settings.get("height") is not None:
                             args.extend(["--height", str(int(settings["height"]))])
+
                         if settings.get("length") is not None:
                             args.extend(["--length", str(int(settings["length"]))])
+
                         if settings.get("fps") is not None:
                             args.extend(["--fps", str(int(settings["fps"]))])
+
                         if settings.get("format"):
                             args.extend(["--format", str(settings["format"]).strip()])
+
                         if settings.get("seed") is not None and settings["seed"] != "":
                             args.extend(["--seed", str(int(settings["seed"]))])
+
                 except Exception as e:
                     st.warning(f"Could not add parameter overrides: {e}")
 
-                save_logs = st.checkbox("Save logs to this session", value=True, help="Writes batch_log.txt into the session's Prompts folder.")
-                log_area = st.empty()
-                lines = []
-                try:
-                    proc = subprocess.Popen(
-                        args,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1
-                    )
-                    for line in iter(proc.stdout.readline, ''):
-                        if not line:
+                # WebSocket listener
+
+                def _ws_url(http_url: str) -> str:
+                    return http_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
+
+                def listen_ws(server_url: str, client_id: str, out_q: "queue.Queue[dict]", stop_flag: dict):
+                    if websocket is None:
+                        return
+
+                    ws = None
+
+                    try:
+                        ws = websocket.WebSocket()
+                        ws.connect(f"{_ws_url(server_url)}/ws?clientId={client_id}")
+                        ws.settimeout(1.0)
+
+                        while not stop_flag["stop"]:
+                            try:
+                                msg = ws.recv()
+
+                            except Exception:
+                                continue
+
+                            try:
+                                data = json.loads(msg)
+
+                            except Exception:
+                                continue
+
+                            # only forward meaningful types
+                            if data.get("type") in {"progress","executing","execution_start","execution_success","execution_error","status"}:
+                                out_q.put(data)
+
+                    finally:
+                        try:
+                            ws and ws.close()
+                        except Exception:
+                            pass
+
+                events_q: "queue.Queue[dict]" = queue.Queue()
+                stop_flag = {"stop": False}
+
+                if websocket:
+                    threading.Thread(target=listen_ws, args=(server_url, client_id, events_q, stop_flag), daemon=True).start()
+
+                # Status UI wrapper
+                with st.status("Validating & preparing…", expanded=True) as status:
+                    pct = st.progress(0)
+                    step = st.empty()
+                    node_line = st.empty()
+                    log_box = st.code("", language="bash")
+
+                    # Launch the batch subprocess
+                    status.update(label="Queuing jobs in ComfyUI…")
+                    lines = []
+                    try:
+                        proc = subprocess.Popen(
+                            args,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            bufsize=1
+                        )
+
+                    except FileNotFoundError:
+                        status.update(label="Could not launch Python or the batch script. Check the paths.", state="error")
+                        st.stop()
+
+                    except Exception as e:
+                        status.update(label=f"Batch run error: {e}", state="error")
+                        st.stop()
+
+                    # Listen phase
+                    step.markdown("**Listening for progress…**" if websocket else "**Polling for completion (no WS)…**")
+                    overall_pct = 0
+                    per_prompt_pct = {}
+                    saw_ws_event = False
+
+                    # Merge logs + events
+                    while True:
+                        # a) stream logs
+                        line = proc.stdout.readline() if proc.stdout else ""
+
+                        if line:
+                            lines.append(line.rstrip("\n"))
+                            log_box.code("\n".join(lines[-400:]), language="bash")
+
+                        # b) WS events
+                        got_event = False
+
+                        while True:
+                            try:
+                                evt = events_q.get_nowait()
+                            except queue.Empty:
+                                break
+                            got_event = True
+                            et = evt.get("type")
+                            data = evt.get("data", {})
+
+                            if et == "progress":
+                                saw_ws_event = True
+                                v, m = data.get("value", 0), max(1, data.get("max", 1))
+                                prompt_id = data.get("prompt_id") or "all"
+                                per_prompt_pct[prompt_id] = int(100 * v / m)
+                                vals = list(per_prompt_pct.values()) or [0]
+                                overall_pct = sum(vals) // len(vals)
+                                pct.progress(overall_pct, text=f"{overall_pct}%")
+                                node_line.markdown(f"**Current node:** `{data.get('node')}`")
+                                status.update(label=f"Generating… {overall_pct}%")
+
+                            elif et == "executing":
+                                node = data.get("node")
+                                node_line.markdown(f"**Current node:** `{node}`")
+                                status.update(label=f"Running node: {node}")
+
+                            elif et == "execution_start":
+                                step.markdown("**Execution started.**")
+
+                            elif et == "execution_success":
+                                pct.progress(100, text="Completed ✓")
+                                status.update(label="Completed ✓", state="complete")
+
+                            elif et == "execution_error":
+                                status.update(label="Failed ✗", state="error")
+
+                        # Exit when subprocess finished and we’ve drained events
+                        if proc.poll() is not None and not got_event and events_q.empty():
                             break
-                        lines.append(line.rstrip("\n"))
-                        log_area.code("\n".join(lines[-400:]), language="bash")
-                    return_code = proc.wait()
+
+                        time.sleep(0.05)
+
+                    # Save logs if requested
                     if save_logs:
                         try:
                             sid = st.session_state.get("session_timestamp", "session_default")
@@ -298,97 +464,24 @@ def main() -> None:
                             log_dir.mkdir(parents=True, exist_ok=True)
                             (log_dir / "batch_log.txt").write_text("\n".join(lines), encoding="utf-8")
                             st.success("Saved logs to Prompts/<session>/batch_log.txt")
+
                         except Exception as _e:
                             st.warning(f"Could not save logs: {_e}")
-                    if return_code == 0:
-                        status_box.success("✅ Batch finished. Check ComfyUI outputs.")
+
+                    # Final status (if WS didn’t mark success/error)
+                    rc = proc.returncode
+                    if rc == 0:
+                        status.update(label="Batch finished (exit code 0). Check ComfyUI outputs.", state="complete")
                     else:
-                        status_box.warning(f"⚠️ Batch exited with code {return_code}. See logs above.")
-                except FileNotFoundError:
-                    status_box.error("Could not launch Python or the batch script. Check the paths.")
-                except Exception as e:
-                    status_box.error(f"Batch run error: {e}")
+                        status.update(label=f"Batch exited with code {rc}. See logs above.", state="error")
+
+                # stop WS thread
+                stop_flag["stop"] = True
     
-            if not master_file.exists():
-                st.error("Master JSONL not found. Generate at least one prompt first.")
-            elif not workflow_path:
-                st.error("Please provide a Workflow JSON path.")
-            else:
-                args = [sys.executable, "-u", str(batch_script),
-                        "--workflow", str(workflow_path),
-                        "--jsonl", str(master_file),
-                        "--server", server_url,
-                        "--prefix", prefix,
-                        "--title-filter", title_filter]
-                if wait_done:
-                    args.append("--wait")
-                if add_cli_suffix and cli_suffix.strip():
-                    args.extend(["--suffix", cli_suffix.strip()])
-                if max_words_cli and int(max_words_cli) > 0:
-                    args.extend(["--max-words", str(int(max_words_cli))])
-
-                # Pass overrides from sidebar if user enabled them
-                try:
-                    if settings.get("override_params"):
-                        if settings.get("steps") is not None:
-                            args.extend(["--steps", str(int(settings["steps"]))])
-                        if settings.get("guidance") is not None:
-                            args.extend(["--guidance", str(float(settings["guidance"]))])
-                        if settings.get("width") is not None:
-                            args.extend(["--width", str(int(settings["width"]))])
-                        if settings.get("height") is not None:
-                            args.extend(["--height", str(int(settings["height"]))])
-                        if settings.get("length") is not None:
-                            args.extend(["--length", str(int(settings["length"]))])
-                        if settings.get("fps") is not None:
-                            args.extend(["--fps", str(int(settings["fps"]))])
-                        if settings.get("format"):
-                            args.extend(["--format", str(settings["format"]).strip()])
-                        if settings.get("seed") is not None and settings["seed"] != "":
-                            args.extend(["--seed", str(int(settings["seed"]))])
-                except Exception as e:
-                    st.warning(f"Could not add parameter overrides: {e}")
-
-                save_logs = st.checkbox("Save logs to this session", value=True, help="Writes batch_log.txt into the session's Prompts folder.")
-                log_area = st.empty()
-                lines = []
-                try:
-                    proc = subprocess.Popen(
-                        args,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1
-                    )
-                    for line in iter(proc.stdout.readline, ''):
-                        if not line:
-                            break
-                        lines.append(line.rstrip("\n"))
-                        log_area.code("\n".join(lines[-400:]), language="bash")
-                    return_code = proc.wait()
-                    if save_logs:
-                        try:
-                            sid = st.session_state.get("session_timestamp", "session_default")
-                            log_dir = (ROOT_PROMPTS / sid)
-                            log_dir.mkdir(parents=True, exist_ok=True)
-                            (log_dir / "batch_log.txt").write_text("\n".join(lines), encoding="utf-8")
-                            st.success("Saved logs to Prompts/<session>/batch_log.txt")
-                        except Exception as _e:
-                            st.warning(f"Could not save logs: {_e}")
-                    if return_code == 0:
-                        st.success("Batch finished (exit code 0). Check ComfyUI outputs.")
-                    else:
-                        st.warning(f"Batch exited with code {return_code}. See logs above.")
-                except FileNotFoundError:
-                    st.error("Could not launch Python or the batch script. Check the paths.")
-                except Exception as e:
-                    st.error(f"Batch run error: {e}")
-
-    
-    # ---- Browse ComfyUI outputs ----
-    with st.expander("Browse ComfyUI outputs"):
+    # Browse ComfyUI outputs in streamlit
+    with st.expander("Browse your ComfyUI outputs"):
         try:
-            default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output"))
+            default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output")) #Change folder to users liking
             out_dir = st.text_input("Output folder", value=default_out, help="Path where ComfyUI saves outputs (videos).")
             st.session_state.comfy_output_dir = out_dir
 
@@ -396,7 +489,7 @@ def main() -> None:
             if st.button("Refresh list"):
                 pass  # rerun refresh
 
-            # Determine N from master JSONL (dedupe by scene+act -> count)
+            # Determine N from master JSONL (scene+act -> count)
             show_n = 0
             if master_file.exists():
                 try:
@@ -424,7 +517,7 @@ def main() -> None:
             if not base.exists():
                 st.warning(f"Folder does not exist: {base}")
             else:
-                files = [p for p in base.rglob("*.mp4") if p.is_file()]
+                files = [p for p in base.rglob("*.mp4") if p.is_file()] # Only mp4s, no pngs
                 if show_prefix:
                     files = [p for p in files if p.name.startswith(show_prefix)]
                 files.sort(key=lambda p: p.stat().st_mtime, reverse=True)

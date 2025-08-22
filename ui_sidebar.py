@@ -1,38 +1,46 @@
 from typing import Dict
 import streamlit as st
 
+# Build sidebar with set and editable settings
 def render_sidebar(default_system: str) -> Dict:
     st.header("Settings")
 
     with st.expander("System prompt (advanced)", expanded=False):
         system_prompt = st.text_area("System message sent to the model:", value=default_system, height=180)
 
+    # choice of ollama model - set to mistral
     model_name = st.text_input("Ollama model name", value="mistral", help="Any local Ollama model, e.g. 'mistral', 'llama3:instruct', 'qwen2.5'")
+    # Editable fetures to control creativity and length
     temperature = st.slider("Temperature", 0.0, 1.5, 0.7, 0.05)
     num_predict = st.slider("Max tokens (num_predict)", 128, 1024, 512, 64, help="Upper bound for tokens predicted by the model.")
+    # Allows overwriting previous prompts
     overwrite_ok = st.checkbox("Overwrite existing prompts when regenerating", value=False)
 
     st.divider()
+
+    # Counts inputted scenes and acts
     scenes_count = st.number_input("How many scenes?", min_value=1, max_value=20, value=3, step=1)
     acts_per_scene = {}
     for i in range(1, int(scenes_count) + 1):
         acts_per_scene[i] = st.number_input(f"Acts in Scene {i}", min_value=1, max_value=20, value=3, step=1, key=f"acts_{i}")
 
     st.divider()
+
+    # Clears state and creates new master
     reset_clicked = st.button("Reset session (new master file)")
 
     st.divider()
+
+    # Dropdown menu of sytle suffixes for the user to choose
     st.subheader("Style")
     style_presets = {
         "2D Animation": ("Lighting is sterile and even. The animation style is flat vector illustration, clean geometric lines, minimal shading, "
                          "stylised anatomy, soft gradients, glowing light effects, futuristic corporate science aesthetic, 2D motion graphics style, "
                          "medical explainer animation look, crisp edges, Adobe Illustrator and After Effects style"),
         "3D Realistic": ("Photorealistic CGI render, physically based materials, naturalistic global illumination, shallow depth of field, "
-                         "cinematic color grade, subtle film grain, ray-traced reflections, detailed textures"),
+                         "cinematic color grade, ray-traced reflections, detailed textures"),
         "Documentary Realism": ("Natural handheld camerawork, practical lighting, neutral color grade, true-to-life textures, ambient room tone, "
                                 "unobtrusive visual style"),
-        "Anime": ("Stylised anime look, bold cel shading, high-contrast line art, expressive facial features, saturated color palette, "
-                  "dynamic perspective, speed lines"),
         "Sketch/Storyboard": ("Monochrome pencil sketch style, rough crosshatching, loose gesture lines, storyboard frame aesthetic, minimal shading"),
     }
     style_choice = st.selectbox("Style preset", list(style_presets.keys()), index=0)
@@ -49,6 +57,7 @@ def render_sidebar(default_system: str) -> Dict:
 
     st.subheader("Style suffix")
     enable_suffix = st.checkbox("Append style suffix to every prompt", value=True)
+    # Default of the settings I used
     default_suffix = (
         "The animation style is flat vector illustration, clean geometric shapes, minimal shading, "
         "soft gradients, cyan–turquoise palette, 2D motion graphics, medical explainer look, crisp edges."
@@ -57,8 +66,7 @@ def render_sidebar(default_system: str) -> Dict:
 
     st.divider()
 
-    # ---- Render parameters (ComfyUI) ----
-    st.divider()
+    # Allows user to overwrite the workflow parameters, if off its uses the original, if on it overwrites
     st.subheader("Render parameters (ComfyUI)")
     override_params = st.checkbox("Override workflow parameters for this batch", value=False, help="If off, your workflow JSON values are used.")
     col1, col2 = st.columns(2)
