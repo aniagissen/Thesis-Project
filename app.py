@@ -6,23 +6,19 @@ import subprocess
 import sys
 import os
 
+from prompt_service import generate_prompt, generate_prompt_from_desc_and_image  # add second import
+from ui import act_description_input, show_existing_prompt, act_action_buttons, show_generated_output, act_reference_image_controls  # include the new controls
+
+
 from config import ensure_roots, init_session_state, ROOT_SCENES, ROOT_PROMPTS
 from storage import ensure_scene_dirs, save_json, append_jsonl, load_json
-from prompt_service import generate_prompt
 from export_service import create_export_zip
 from ui_sidebar import render_sidebar
-from ui import act_description_input, show_existing_prompt, act_action_buttons, show_generated_output
 from text_utils import ensure_suffix, enforce_word_budget
-
-import uuid
-import threading
-import queue
 import time
 from typing import Dict, Any
-try: 
-    import websocket
-except Exception:
-    websocket = None
+
+
 
 # System prompt sent to llama
 DEFAULT_SYSTEM = (
@@ -62,6 +58,7 @@ def main() -> None:
         for act_idx in range(1, int(acts_per_scene[scene_idx]) + 1):
             st.markdown(f"**Act {act_idx}**")
             act_desc = act_description_input(scene_idx, act_idx) # Text box for user inputting prompt per act per scene
+            use_ref, ref_file, ref_entity = act_reference_image_controls(scene_idx, act_idx) 
 
             # Two file paths for saving outputs
             raw_txt_path = scene_dir / f"act_{act_idx}.txt"
@@ -84,6 +81,7 @@ def main() -> None:
                 # Back up if prompt has already been genereated. Instructions for how to override
                 if json_path.exists() and not settings["overwrite_ok"]:
                     st.info("A prompt already exists for this act. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
+                    st.stop
                 else:
                     try:
                         raw_txt_path.write_text(act_desc.strip() + "\n", encoding="utf-8")
@@ -91,7 +89,36 @@ def main() -> None:
                         st.error(f"Failed to write raw description: {e}")
                         st.stop()
 
-                    try:
+                try:
+                    # If user provided a reference image, save it and use the vision flow
+                    ref_image_path = None
+                    if use_ref and ref_file is not None:
+                        try:
+                            sid = st.session_state.get("session_timestamp", "session_default")
+                            save_dir = ROOT_PROMPTS / sid / "act_refs" / f"scene_{scene_idx}_act_{act_idx}"
+                            save_dir.mkdir(parents=True, exist_ok=True)
+                            ext = Path(ref_file.name).suffix or ".png"
+                            ref_image_path = save_dir / f"reference{ext}"
+                            with open(ref_image_path, "wb") as f:
+                                f.write(ref_file.getbuffer())
+                        except Exception as e:
+                            st.warning(f"Could not save reference image. Proceeding without it. ({e})")
+                            ref_image_path = None
+
+                    if ref_image_path:
+                        # Vision model: use the same model_name (llama3.2-vision:11b) or expose a separate setting if you prefer
+                        prompt_text = generate_prompt_from_desc_and_image(
+                            model=settings["model_name"],
+                            system_msg=settings["system_prompt"],
+                            act_desc=act_desc,
+                            image_path=str(ref_image_path),
+                            temperature=settings["temperature"],
+                            num_predict=settings["num_predict"],
+                            max_words=int(settings.get("max_words", 80)),
+                            entity_hint=ref_entity,
+                        )
+                    else:
+                        # Text-only fallback
                         prompt_text = generate_prompt(
                             model=settings["model_name"],
                             system_msg=settings["system_prompt"],
@@ -99,46 +126,51 @@ def main() -> None:
                             temperature=settings["temperature"],
                             num_predict=settings["num_predict"],
                         )
-                    except RuntimeError as e:
-                        st.error(str(e))
-                        st.stop()
+                except RuntimeError as e:
+                    st.error(str(e))
+                    st.stop()
 
-                    # Apply style suffix to end
-                    applied = False
-                    if settings.get("enable_suffix"):
-                        prompt_text, applied = ensure_suffix(prompt_text, settings.get("suffix_text", ""))
-                    trimmed = False
-                    # protects style suffix is prompt is too long
-                    if settings.get("max_words"):
-                        prompt_text, trimmed = enforce_word_budget(
-                            prompt_text, int(settings.get("max_words")), protect_suffix=(settings.get("suffix_text") if settings.get("enable_suffix") else None)
-                        )
+                # Apply style suffix to end
+                applied = False
+                if settings.get("enable_suffix"):
+                    prompt_text, applied = ensure_suffix(prompt_text, settings.get("suffix_text", ""))
+                trimmed = False
+                # protects style suffix is prompt is too long
+                if settings.get("max_words"):
+                    prompt_text, trimmed = enforce_word_budget(
+                        prompt_text, int(settings.get("max_words")), protect_suffix=(settings.get("suffix_text") if settings.get("enable_suffix") else None)
+                    )
 
-                    # Records everything
-                    record = {
-                        "scene": scene_idx,
-                        "act": act_idx,
-                        "input_description": act_desc.strip(),
-                        "generated_prompt": prompt_text,
-                        "created_at": datetime.now().isoformat(timespec="seconds"),
-                        "model": settings["model_name"],
-                        "options": {"temperature": settings["temperature"], "num_predict": settings["num_predict"]},
-                        "style_suffix": {"enabled": bool(settings.get("enable_suffix")), "applied": bool(applied)},
-                        "length_control": {"max_words": int(settings.get("max_words", 0)), "trimmed": bool(trimmed)},
-                        "paths": {"raw": str(raw_txt_path), "json": str(json_path), "master": str(master_file)},
-                    }
+                # Records everything
+                record = {
+                    "scene": scene_idx,
+                    "act": act_idx,
+                    "input_description": act_desc.strip(),
+                    "generated_prompt": prompt_text,
+                    "created_at": datetime.now().isoformat(timespec="seconds"),
+                    "model": settings["model_name"],
+                    "options": {"temperature": settings["temperature"], "num_predict": settings["num_predict"]},
+                    "style_suffix": {"enabled": bool(settings.get("enable_suffix")), "applied": bool(applied)},
+                    "length_control": {"max_words": int(settings.get("max_words", 0)), "trimmed": bool(trimmed)},
+                    "reference": {
+                        "image": str(ref_image_path) if ref_image_path else None,
+                        "entity": ref_entity or None,
+                    },
+                    "paths": {"raw": str(raw_txt_path), "json": str(json_path), "master": str(master_file)},
+                }
 
-                    # Write the JSON file and stick on the master JSONL
-                    try:
-                        save_json(json_path, record)
-                        append_jsonl(master_file, record)
-                    except Exception as e:
-                        st.error(f"Failed to save outputs: {e}")
-                        st.stop()
 
-                    # Confidence check
-                    st.success("Prompt generated and saved.")
-                    show_generated_output(prompt_text, scene_idx, act_idx)
+                # Write the JSON file and stick on the master JSONL
+                try:
+                    save_json(json_path, record)
+                    append_jsonl(master_file, record)
+                except Exception as e:
+                    st.error(f"Failed to save outputs: {e}")
+                    st.stop()
+
+                # Confidence check
+                st.success("Prompt generated and saved.")
+                show_generated_output(prompt_text, scene_idx, act_idx)
 
         st.divider()
 
@@ -259,9 +291,6 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Server test failed: {e}")
 
-        
-        status_box = st.empty()  # status indicator
-
         if run_clicked:
 
             if not master_file.exists():
@@ -275,111 +304,53 @@ def main() -> None:
                 save_logs = st.checkbox("Save logs to this session", value=True,
                                         help="Writes batch_log.txt into the session's Prompts folder.")
 
-                # Build command but inject a shared client_id for WS filtering
-                client_id = str(uuid.uuid4())
-
                 args = [sys.executable, "-u", str(batch_script),
                         "--workflow", str(workflow_path),
                         "--jsonl", str(master_file),
                         "--server", server_url,
                         "--prefix", prefix,
-                        "--title-filter", title_filter,
-                        "--client-id", client_id]  
+                        "--title-filter", title_filter]
 
                 if wait_done:
                     args.append("--wait")
-
                 if add_cli_suffix and cli_suffix.strip():
                     args.extend(["--suffix", cli_suffix.strip()])
-
                 if max_words_cli and int(max_words_cli) > 0:
                     args.extend(["--max-words", str(int(max_words_cli))])
 
                 try:
                     if settings.get("override_params"):
-
                         if settings.get("steps") is not None:
                             args.extend(["--steps", str(int(settings["steps"]))])
-
                         if settings.get("guidance") is not None:
                             args.extend(["--guidance", str(float(settings["guidance"]))])
-
                         if settings.get("width") is not None:
                             args.extend(["--width", str(int(settings["width"]))])
-
                         if settings.get("height") is not None:
                             args.extend(["--height", str(int(settings["height"]))])
-
                         if settings.get("length") is not None:
                             args.extend(["--length", str(int(settings["length"]))])
-
                         if settings.get("fps") is not None:
                             args.extend(["--fps", str(int(settings["fps"]))])
-
                         if settings.get("format"):
                             args.extend(["--format", str(settings["format"]).strip()])
-
                         if settings.get("seed") is not None and settings["seed"] != "":
                             args.extend(["--seed", str(int(settings["seed"]))])
-
                 except Exception as e:
                     st.warning(f"Could not add parameter overrides: {e}")
 
-                # WebSocket listener
-
-                def _ws_url(http_url: str) -> str:
-                    return http_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
-
-                def listen_ws(server_url: str, client_id: str, out_q: "queue.Queue[dict]", stop_flag: dict):
-                    if websocket is None:
-                        return
-
-                    ws = None
-
-                    try:
-                        ws = websocket.WebSocket()
-                        ws.connect(f"{_ws_url(server_url)}/ws?clientId={client_id}")
-                        ws.settimeout(1.0)
-
-                        while not stop_flag["stop"]:
-                            try:
-                                msg = ws.recv()
-
-                            except Exception:
-                                continue
-
-                            try:
-                                data = json.loads(msg)
-
-                            except Exception:
-                                continue
-
-                            # only forward meaningful types
-                            if data.get("type") in {"progress","executing","execution_start","execution_success","execution_error","status"}:
-                                out_q.put(data)
-
-                    finally:
-                        try:
-                            ws and ws.close()
-                        except Exception:
-                            pass
-
-                events_q: "queue.Queue[dict]" = queue.Queue()
-                stop_flag = {"stop": False}
-
-                if websocket:
-                    threading.Thread(target=listen_ws, args=(server_url, client_id, events_q, stop_flag), daemon=True).start()
-
-                # Status UI wrapper
-                with st.status("Validating & preparing…", expanded=True) as status:
-                    pct = st.progress(0)
-                    step = st.empty()
-                    node_line = st.empty()
+                # --- Simple streaming status (no WebSocket) ---
+                start_ts = time.time()
+                with st.status("🎥 Generating videos…", expanded=True) as status:
+                    info_line = st.empty()
+                    current_line = st.empty()
                     log_box = st.code("", language="bash")
+                    lines = []
+                    completed = 0
+                    total = None
+                    current_label = ""
 
                     # Launch the batch subprocess
-                    status.update(label="Queuing jobs in ComfyUI…")
-                    lines = []
                     try:
                         proc = subprocess.Popen(
                             args,
@@ -388,70 +359,55 @@ def main() -> None:
                             text=True,
                             bufsize=1
                         )
-
                     except FileNotFoundError:
                         status.update(label="Could not launch Python or the batch script. Check the paths.", state="error")
                         st.stop()
-
                     except Exception as e:
                         status.update(label=f"Batch run error: {e}", state="error")
                         st.stop()
 
-                    # Listen phase
-                    step.markdown("**Listening for progress…**" if websocket else "**Polling for completion (no WS)…**")
-                    overall_pct = 0
-                    per_prompt_pct = {}
-                    saw_ws_event = False
+                    import re as _re
+                    re_begin  = _re.compile(r'^BATCH_BEGIN\s+total=(\d+)\b')
+                    re_jobbeg = _re.compile(r'^JOB_BEGIN\s+i=(\d+)\s+of=(\d+)\s+label=(.+)$')
+                    re_done   = _re.compile(r'^JOB_DONE\s+i=(\d+)\b')
+                    re_error  = _re.compile(r'^JOB_ERROR\s+i=(\d+)\s+error="?(.*?)"?$')
+                    re_end    = _re.compile(r'^BATCH_END\b')
 
-                    # Merge logs + events
                     while True:
-                        # a) stream logs
                         line = proc.stdout.readline() if proc.stdout else ""
-
                         if line:
-                            lines.append(line.rstrip("\n"))
+                            line = line.rstrip("\n")
+                            lines.append(line)
+
+                            m = re_begin.match(line)
+                            if m:
+                                total = int(m.group(1))
+
+                            m = re_jobbeg.match(line)
+                            if m:
+                                current_label = m.group(3).strip()
+
+                            if re_done.match(line):
+                                completed += 1
+
+                            m = re_error.match(line)
+                            if m:
+                                completed += 1  # count error as finished
+
+                            elapsed = int(time.time() - start_ts)
+                            if total:
+                                info_line.markdown(f"**Status:** {completed}/{total} completed • {elapsed}s elapsed")
+                            else:
+                                info_line.markdown(f"**Status:** starting… • {elapsed}s elapsed")
+                            if current_label:
+                                current_line.write(f"**Current:** {current_label}")
+
                             log_box.code("\n".join(lines[-400:]), language="bash")
 
-                        # b) WS events
-                        got_event = False
-
-                        while True:
-                            try:
-                                evt = events_q.get_nowait()
-                            except queue.Empty:
+                            if re_end.match(line):
                                 break
-                            got_event = True
-                            et = evt.get("type")
-                            data = evt.get("data", {})
 
-                            if et == "progress":
-                                saw_ws_event = True
-                                v, m = data.get("value", 0), max(1, data.get("max", 1))
-                                prompt_id = data.get("prompt_id") or "all"
-                                per_prompt_pct[prompt_id] = int(100 * v / m)
-                                vals = list(per_prompt_pct.values()) or [0]
-                                overall_pct = sum(vals) // len(vals)
-                                pct.progress(overall_pct, text=f"{overall_pct}%")
-                                node_line.markdown(f"**Current node:** `{data.get('node')}`")
-                                status.update(label=f"Generating… {overall_pct}%")
-
-                            elif et == "executing":
-                                node = data.get("node")
-                                node_line.markdown(f"**Current node:** `{node}`")
-                                status.update(label=f"Running node: {node}")
-
-                            elif et == "execution_start":
-                                step.markdown("**Execution started.**")
-
-                            elif et == "execution_success":
-                                pct.progress(100, text="Completed ✓")
-                                status.update(label="Completed ✓", state="complete")
-
-                            elif et == "execution_error":
-                                status.update(label="Failed ✗", state="error")
-
-                        # Exit when subprocess finished and we’ve drained events
-                        if proc.poll() is not None and not got_event and events_q.empty():
+                        if proc.poll() is not None and not line:
                             break
 
                         time.sleep(0.05)
@@ -464,19 +420,17 @@ def main() -> None:
                             log_dir.mkdir(parents=True, exist_ok=True)
                             (log_dir / "batch_log.txt").write_text("\n".join(lines), encoding="utf-8")
                             st.success("Saved logs to Prompts/<session>/batch_log.txt")
-
                         except Exception as _e:
                             st.warning(f"Could not save logs: {_e}")
 
-                    # Final status (if WS didn’t mark success/error)
-                    rc = proc.returncode
+                    rc = proc.returncode or 0
                     if rc == 0:
-                        status.update(label="Batch finished (exit code 0). Check ComfyUI outputs.", state="complete")
+                        status.update(label="✅ Batch finished. Check ComfyUI outputs.", state="complete")
                     else:
-                        status.update(label=f"Batch exited with code {rc}. See logs above.", state="error")
+                        status.update(label=f"⚠️ Batch exited with code {rc}. See logs above.", state="error")
 
-                # stop WS thread
-                stop_flag["stop"] = True
+
+
     
     # Browse ComfyUI outputs in streamlit
     with st.expander("Browse your ComfyUI outputs"):

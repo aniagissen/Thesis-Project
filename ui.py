@@ -1,6 +1,30 @@
 from typing import Optional, Dict, Any, Tuple
 import streamlit as st
 
+def act_reference_image_controls(scene_idx: int, act_idx: int) -> Tuple[bool, Optional["st.runtime.uploaded_file_manager.UploadedFile"], str]:
+    use_ref = st.checkbox(
+        "Use reference image for this act",
+        key=f"use_ref_{scene_idx}_{act_idx}",
+        value=False
+    )
+    file = st.file_uploader(
+        "Reference image (optional)",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=f"refimg_{scene_idx}_{act_idx}",
+        disabled=not use_ref
+    )
+    entity_hint = ""
+    if use_ref:
+        entity_hint = st.text_input(
+            "This image represents (e.g., “neuron”, “microtubule”, “antibody”):",
+            key=f"refimg_entity_{scene_idx}_{act_idx}",
+            placeholder="e.g., neuron",
+        )
+    if file is not None:
+        st.image(file, caption="Reference", use_container_width=True)
+    return use_ref, file, entity_hint
+
+
 def act_description_input(scene_idx: int, act_idx: int, *, key_prefix: str = "") -> str:
     key = key_prefix or f"desc_{scene_idx}_{act_idx}"
     return st.text_area("Short description", key=key, height=90, placeholder="e.g., A doctor walks through a neon-lit corridor...")

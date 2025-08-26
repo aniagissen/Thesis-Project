@@ -9,6 +9,7 @@ import argparse, json, time, uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
+import re
 
 # Input/Output helpers
 # Reads JSONL and checks each line is compatible
@@ -28,12 +29,12 @@ def iter_jsonl_records(path: Path, key: str = "generated_prompt") -> List[Dict[s
                 if len(obj) == 1:
                     v = next(iter(obj.values()))
                     if v:
-                        obj['_text'] = str(v).strip()
+                        obj["_text"] = str(v).strip()
                         records.append(obj)
                         continue
-                # Shows errors
+                    #Shows errors
                 raise RuntimeError(f"Line {i} missing '{key}' field.")
-            obj['_text'] = str(obj[key]).strip()
+            obj["_text"] = str(obj[key]).strip()
             records.append(obj)
     if not records:
         raise RuntimeError(f"No prompts found in {path}.")
@@ -46,6 +47,7 @@ def load_workflow(path: Path) -> Dict[str, Any]:
 # Workflow helpers for API and JSON
 # Registers the workflow being an API
 def is_api_prompt(workflow: Dict[str, Any]) -> bool:
+    # API format has dict of nodes keyed by id, no top-level "nodes" list
     return isinstance(workflow, dict) and "nodes" not in workflow and all(
         isinstance(v, dict) and ("class_type" in v and "inputs" in v) for v in workflow.values()
     )
@@ -97,6 +99,9 @@ def set_video_prefix(workflow: Dict[str, Any], prefix: str) -> None:
         w = vhs.get("widgets_values")
         if isinstance(w, dict):
             w["filename_prefix"] = prefix
+        elif isinstance(w, list) and w:
+            # assume first widget is filename_prefix for VHS_VideoCombine in UI export
+            w[0] = prefix
 
 # Override helpers
 def set_scheduler_steps(workflow: Dict[str, Any], steps: Optional[int]) -> None:
@@ -197,12 +202,10 @@ def main():
     ap.add_argument("--fps", type=int, default=None, help="Override VHS_VideoCombine frame_rate")
     ap.add_argument("--format", type=str, default=None, help="Override VHS_VideoCombine format (e.g., video/nvenc_h264-mp4)")
     ap.add_argument("--seed", type=int, default=None, help="Override RandomNoise noise_seed (0=random)")
-    # status bar
-    parser.add_argument("--client_id", dest="client", default=None,
-                        help+"Client UUID used for WebSocket filtering.")
+    ap.add_argument("--client-id", dest="client_id", default=None, help="(Ignored) legacy WS client id")
+
     args = ap.parse_args()
 
-    # Check workflow and JSON exist
     if not args.workflow.exists():
         raise SystemExit(f"Workflow not found: {args.workflow}")
     if not args.jsonl.exists():
@@ -211,41 +214,36 @@ def main():
     records = iter_jsonl_records(args.jsonl)
     base_workflow = load_workflow(args.workflow)
 
-    # Generate UUID and print jobs
-    client_id = str(uuid.uuid4())
-    print(f"Using client_id={client_id}")
-    print(f"Queuing {len(records)} jobs to {args.server}")
-
-    # Setting client id for status bar
-    client_id = args.client_id or str(uuid.uuid4())
-    print(f"[client] {client_id}", flush=True)
+    print(f"BATCH_BEGIN total={len(records)} server={args.server}", flush=True)
 
     for i, rec in enumerate(records, 1):
-        prompt_text = str(rec.get('_text', '')).strip()
-        # optional suffix and budget
+        prompt_text = str(rec.get("_text", "")).strip()
+
+        # optional suffix & budget
         if args.suffix:
             if not prompt_text.endswith(('.', '!', '?')):
                 prompt_text = prompt_text.rstrip() + "."
             if args.suffix.lower() not in prompt_text.lower():
                 prompt_text = f"{prompt_text} {args.suffix}"
         if args.max_words and args.max_words > 0:
-            words = re.findall(r"[\\w'-]+", prompt_text)
+            words = re.findall(r"[\w'-]+", prompt_text)
             if len(words) > args.max_words:
                 prompt_text = " ".join(words[:args.max_words]).rstrip(".")
                 if not prompt_text.endswith(('.', '!', '?')):
                     prompt_text += "."
 
         # Deep copy base workflow so each batch starts from the same template
-        wf = json.loads(json.dumps(base_workflow))  
+        wf = json.loads(json.dumps(base_workflow))
+
         # Find CLIP node and set text
         clip_node = find_node(wf, "CLIPTextEncode", title_contains=args.title_filter)
         set_clip_text(wf, clip_node, prompt_text)
+
+        # Build filename label used both for saving and UI
         scene = rec.get("scene")
         act = rec.get("act")
         created = rec.get("created_at")
         dt_date = dt_time = None
-        
-        # Set file name
         if isinstance(created, str):
             try:
                 from datetime import datetime as _dt
@@ -259,31 +257,35 @@ def main():
             tt = _time.localtime()
             dt_date = _time.strftime("%Y%m%d", tt)
             dt_time = _time.strftime("%H%M%S", tt)
+
         if scene is not None and act is not None:
             per_prefix = f"Scene{int(scene)}_Act{int(act)}_{dt_date}_{dt_time}"
         else:
             per_prefix = f"{args.prefix}_{i:04d}"
+
+        # Apply filename and optional overrides
         set_video_prefix(wf, per_prefix)
-        # optional overrides
         set_scheduler_steps(wf, args.steps)
         set_flux_guidance(wf, args.guidance)
         set_latent_dims(wf, args.width, args.height, args.length)
         set_noise_seed(wf, args.seed)
         set_video_params(wf, args.fps, args.format)
 
-        pid = queue_prompt(args.server, wf, client_id)
-        print(f"[{i}/{len(records)}] queued prompt_id={pid}")
+        print(f"JOB_BEGIN i={i} of={len(records)} label={per_prefix}", flush=True)
+
+        # Queue the job
+        pid = queue_prompt(args.server, wf, "batch")
+        print(f"JOB_QUEUED i={i} prompt_id={pid}", flush=True)
 
         if args.wait:
             try:
-                hist = wait_for_completion(args.server, pid)
-                outputs = hist.get("outputs", {})
-                print(f"  -> completed. outputs keys: {list(outputs.keys())}")
+                _ = wait_for_completion(args.server, pid)
+                print(f"JOB_DONE i={i}", flush=True)
             except Exception as e:
-                print(f"  !! error while waiting: {e}")
+                msg = (str(e) or "").replace("\n", " ").strip()
+                print(f'JOB_ERROR i={i} error="{msg}"', flush=True)
 
-    print("Done queuing.")
+    print("BATCH_END", flush=True)
 
 if __name__ == "__main__":
-    import re  # used in optional word trim above
     main()
