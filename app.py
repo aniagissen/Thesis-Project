@@ -18,7 +18,8 @@ from text_utils import ensure_suffix, enforce_word_budget
 import time
 from typing import Dict, Any
 
-
+import shutil
+import tempfile
 
 # System prompt sent to llama
 DEFAULT_SYSTEM = (
@@ -81,7 +82,7 @@ def main() -> None:
                 # Back up if prompt has already been genereated. Instructions for how to override
                 if json_path.exists() and not settings["overwrite_ok"]:
                     st.info("A prompt already exists for this act. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
-                    st.stop
+                    st.stop()
                 else:
                     try:
                         raw_txt_path.write_text(act_desc.strip() + "\n", encoding="utf-8")
@@ -341,7 +342,7 @@ def main() -> None:
 
                 # --- Simple streaming status (no WebSocket) ---
                 start_ts = time.time()
-                with st.status("🎥 Generating videos…", expanded=True) as status:
+                with st.status("Generating videos…", expanded=True) as status:
                     info_line = st.empty()
                     current_line = st.empty()
                     log_box = st.code("", language="bash")
@@ -499,7 +500,168 @@ def main() -> None:
                             st.warning(f"Can't read file for download: {e}")
         except Exception as e:
             st.error(f"Couldn't browse outputs: {e}")
-        st.caption("Tip: Each act only generates on button click. Existing prompts are preserved unless you enable overwrite.")
+
+    # --- Build a stitched video + optional audio (FFmpeg) ---
+
+    with st.expander("Stitch all videos and add audio"):
+        # Use the same output dir/prefix UX you already have
+        default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output"))
+        out_dir = st.text_input("ComfyUI output folder", value=default_out)
+        prefix_filter = st.text_input("Filename prefix to include (optional)", value="")
+        order = st.selectbox("Order clips by", ["Scene/Act numbers", "Modified time (newest→oldest)", "Filename (A→Z)"], index=0)
+
+        audio_file = st.file_uploader("Optional audio (mp3/wav/m4a/aac)", type=["mp3","wav","m4a","aac"])
+        final_name = st.text_input("Final file name", value=f"final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+
+
+        # For robustness, re-encode every clip to consistent params before concatenation
+        target_fps = st.number_input("Target FPS", min_value=1, max_value=120, value=24, step=1)
+        crf = st.number_input("Video quality (CRF, lower=better)", min_value=12, max_value=30, value=18, step=1)
+
+        go = st.button("Build stitched video")
+
+        if go:
+            # Pre-flight: ffmpeg available?
+            if not shutil.which("ffmpeg"):
+                st.error("FFmpeg not found on PATH. Install FFmpeg and restart the app.")
+                st.stop()
+
+            base = Path(os.path.expanduser(out_dir)).resolve()
+            if not base.exists():
+                st.error(f"Folder not found: {base}")
+                st.stop()
+
+            # Collect mp4s
+            files = [p for p in base.rglob("*.mp4") if p.is_file()]
+            if prefix_filter:
+                files = [p for p in files if p.name.startswith(prefix_filter)]
+            if not files:
+                st.warning("No MP4 files found matching your filter.")
+                st.stop()
+
+            # Sorting strategy
+            import re as _re
+            def _scene_act_key(p: Path):
+                # Parse SceneX_ActY if present, else fallback
+                m = _re.search(r"Scene(\d+)_Act(\d+)", p.name, _re.I)
+                if m:
+                    return (int(m.group(1)), int(m.group(2)), p.name)
+                return (10**9, 10**9, p.name)  # push unknowns to the end
+            if order == "Scene/Act numbers":
+                files.sort(key=_scene_act_key)
+            elif order == "Modified time (newest→oldest)":
+                files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            else:
+                files.sort(key=lambda p: p.name.lower())
+
+            # Show the plan
+            st.write("Clips to stitch (first 10 shown):")
+            for p in files[:10]:
+                st.markdown(f"- {p.name}")
+
+            # Work directory
+            tmp_dir = Path(tempfile.mkdtemp(prefix="stitch_"))
+            tmp_clips = []
+            log = []
+
+            with st.status("Re-encoding clips…", expanded=True) as status:
+                for i, src in enumerate(files, 1):
+                    dst = tmp_dir / f"clip_{i:04d}.mp4"
+                    # Re-encode to uniform H.264 + AAC, fixed fps, even dimensions
+                    # Even-dimension scale protects against H.264 'height/width not divisible by 2' issues.
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-i", str(src),
+                        "-r", str(int(target_fps)),
+                        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", str(int(crf)),
+                        "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k",
+                        str(dst)
+                    ]
+                    try:
+                        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        log.append(proc.stdout[-2000:])
+                        if proc.returncode != 0:
+                            raise RuntimeError(f"FFmpeg failed on {src.name}")
+                        tmp_clips.append(dst)
+                        status.update(label=f"Re-encoding clip {i}/{len(files)}…")
+                    except Exception as e:
+                        st.error(f"Failed on {src.name}: {e}")
+                        st.code("\n".join(log[-5:]), language="bash")
+                        st.stop()
+
+                # Concat via demuxer
+                concat_txt = tmp_dir / "concat.txt"
+                concat_txt.write_text("".join([f"file '{c.as_posix()}'\n" for c in tmp_clips]), encoding="utf-8")
+                stitched_path = tmp_dir / "_stitched.mp4"
+
+                status.update(label="Concatenating…")
+                cmd_concat = [
+                    "ffmpeg", "-y",
+                    "-f", "concat", "-safe", "0",
+                    "-i", str(concat_txt),
+                    "-c", "copy",
+                    str(stitched_path)
+                ]
+                proc = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                log.append(proc.stdout[-2000:])
+                if proc.returncode != 0:
+                    # If stream copy fails (rare), fallback to re-encode while concatenating
+                    status.update(label="Concat (re-encode fallback)…")
+                    cmd_concat2 = [
+                        "ffmpeg", "-y",
+                        "-f", "concat", "-safe", "0",
+                        "-i", str(concat_txt),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", str(int(crf)),
+                        "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k",
+                        str(stitched_path)
+                    ]
+                    proc2 = subprocess.run(cmd_concat2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    log.append(proc2.stdout[-2000:])
+                    if proc2.returncode != 0:
+                        st.error("Concat failed (see logs below).")
+                        st.code("\n".join(log[-5:]), language="bash")
+                        st.stop()
+
+                # If audio: mux it in
+                final_path = tmp_dir / (final_name if final_name.endswith(".mp4") else f"{final_name}.mp4")
+                if audio_file is not None:
+                    audio_dst = tmp_dir / f"audio{Path(audio_file.name).suffix}"
+                    audio_dst.write_bytes(audio_file.getbuffer())
+                    status.update(label="Adding audio (shortest wins)…")
+                    cmd_mux = [
+                        "ffmpeg", "-y",
+                        "-i", str(stitched_path),
+                        "-i", str(audio_dst),
+                        "-shortest",
+                        "-map", "0:v:0", "-map", "1:a:0",
+                        "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "192k",
+                        str(final_path)
+                    ]
+                    proc = subprocess.run(cmd_mux, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    log.append(proc.stdout[-2000:])
+                    if proc.returncode != 0:
+                        st.error("Audio mux failed (see logs below).")
+                        st.code("\n".join(log[-5:]), language="bash")
+                        st.stop()
+                else:
+                    shutil.move(stitched_path, final_path)
+
+                status.update(label="Done ✓", state="complete")
+
+            # Show + Download
+            try:
+                st.video(str(final_path))
+            except Exception:
+                pass
+            try:
+                st.download_button("Download final MP4", data=final_path.read_bytes(), file_name=final_path.name)
+            except Exception as e:
+                st.warning(f"Could not attach download button: {e}")
+
 
 if __name__ == "__main__":
     main()
