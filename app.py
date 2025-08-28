@@ -45,7 +45,7 @@ def main() -> None:
     # Clears streamlit and runs fresh script
     if settings["reset_clicked"]:
         st.session_state.clear()
-        st.experimental_rerun()
+        st.rerun()
 
     # Reads default from settings and 
     scenes_count = settings["scenes_count"]
@@ -342,10 +342,10 @@ def main() -> None:
 
                 # --- Simple streaming status (no WebSocket) ---
                 start_ts = time.time()
-                with st.status("Generating videos…", expanded=True) as status:
+                with st.spinner("Generating videos…"):
                     info_line = st.empty()
                     current_line = st.empty()
-                    log_box = st.code("", language="bash")
+                    log_box = st.empty()  # will hold st.code(...)
                     lines = []
                     completed = 0
                     total = None
@@ -361,12 +361,13 @@ def main() -> None:
                             bufsize=1
                         )
                     except FileNotFoundError:
-                        status.update(label="Could not launch Python or the batch script. Check the paths.", state="error")
+                        st.error("Could not launch Python or the batch script. Check the paths.")
                         st.stop()
                     except Exception as e:
-                        status.update(label=f"Batch run error: {e}", state="error")
+                        st.error(f"Batch run error: {e}")
                         st.stop()
 
+                    # Parse runner events
                     import re as _re
                     re_begin  = _re.compile(r'^BATCH_BEGIN\s+total=(\d+)\b')
                     re_jobbeg = _re.compile(r'^JOB_BEGIN\s+i=(\d+)\s+of=(\d+)\s+label=(.+)$')
@@ -413,26 +414,24 @@ def main() -> None:
 
                         time.sleep(0.05)
 
-                    # Save logs if requested
-                    if save_logs:
-                        try:
-                            sid = st.session_state.get("session_timestamp", "session_default")
-                            log_dir = (ROOT_PROMPTS / sid)
-                            log_dir.mkdir(parents=True, exist_ok=True)
-                            (log_dir / "batch_log.txt").write_text("\n".join(lines), encoding="utf-8")
-                            st.success("Saved logs to Prompts/<session>/batch_log.txt")
-                        except Exception as _e:
-                            st.warning(f"Could not save logs: {_e}")
+                # Save logs if requested (unchanged)
+                if save_logs:
+                    try:
+                        sid = st.session_state.get("session_timestamp", "session_default")
+                        log_dir = (ROOT_PROMPTS / sid)
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        (log_dir / "batch_log.txt").write_text("\n".join(lines), encoding="utf-8")
+                        st.success("Saved logs to Prompts/<session>/batch_log.txt")
+                    except Exception as _e:
+                        st.warning(f"Could not save logs: {_e}")
 
-                    rc = proc.returncode or 0
-                    if rc == 0:
-                        status.update(label="✅ Batch finished. Check ComfyUI outputs.", state="complete")
-                    else:
-                        status.update(label=f"⚠️ Batch exited with code {rc}. See logs above.", state="error")
+                rc = proc.returncode or 0
+                if rc == 0:
+                    st.success("✅ Batch finished. Check ComfyUI outputs.")
+                else:
+                    st.error(f"⚠️ Batch exited with code {rc}. See logs above.")
 
 
-
-    
     # Browse ComfyUI outputs in streamlit
     with st.expander("Browse your ComfyUI outputs"):
         try:
@@ -564,11 +563,16 @@ def main() -> None:
             tmp_clips = []
             log = []
 
-            with st.status("Re-encoding clips…", expanded=True) as status:
+            # --- Re-encode all clips (safe UI version) ---
+            start_ts = time.time()
+            with st.spinner("Re-encoding clips…"):
+                prog = st.progress(0, text="Starting…")
+                log_box = st.empty()
+                lines = []
+
+                tmp_clips = []
                 for i, src in enumerate(files, 1):
                     dst = tmp_dir / f"clip_{i:04d}.mp4"
-                    # Re-encode to uniform H.264 + AAC, fixed fps, even dimensions
-                    # Even-dimension scale protects against H.264 'height/width not divisible by 2' issues.
                     cmd = [
                         "ffmpeg", "-y",
                         "-i", str(src),
@@ -581,22 +585,27 @@ def main() -> None:
                     ]
                     try:
                         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                        log.append(proc.stdout[-2000:])
+                        out = proc.stdout or ""
+                        lines.append(out[-2000:])
+                        log_box.code("\n".join(lines[-5:]), language="bash")
                         if proc.returncode != 0:
-                            raise RuntimeError(f"FFmpeg failed on {src.name}")
+                            st.error(f"FFmpeg failed on {src.name}")
+                            st.stop()
                         tmp_clips.append(dst)
-                        status.update(label=f"Re-encoding clip {i}/{len(files)}…")
+                        prog.progress(i / len(files), text=f"Re-encoding clip {i}/{len(files)}…")
                     except Exception as e:
                         st.error(f"Failed on {src.name}: {e}")
-                        st.code("\n".join(log[-5:]), language="bash")
+                        st.code("\n".join(lines[-5:]), language="bash")
                         st.stop()
 
-                # Concat via demuxer
-                concat_txt = tmp_dir / "concat.txt"
-                concat_txt.write_text("".join([f"file '{c.as_posix()}'\n" for c in tmp_clips]), encoding="utf-8")
-                stitched_path = tmp_dir / "_stitched.mp4"
+            st.success("Re-encode complete ✓")
 
-                status.update(label="Concatenating…")
+            # Concat via demuxer
+            concat_txt = tmp_dir / "concat.txt"
+            concat_txt.write_text("".join([f"file '{c.as_posix()}'\n" for c in tmp_clips]), encoding="utf-8")
+            stitched_path = tmp_dir / "_stitched.mp4"
+
+            with st.spinner("Concatenating clips…"):
                 cmd_concat = [
                     "ffmpeg", "-y",
                     "-f", "concat", "-safe", "0",
@@ -605,10 +614,9 @@ def main() -> None:
                     str(stitched_path)
                 ]
                 proc = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                log.append(proc.stdout[-2000:])
+                log.append((proc.stdout or "")[-2000:])
                 if proc.returncode != 0:
-                    # If stream copy fails (rare), fallback to re-encode while concatenating
-                    status.update(label="Concat (re-encode fallback)…")
+                    # Fallback: re-encode while concatenating
                     cmd_concat2 = [
                         "ffmpeg", "-y",
                         "-f", "concat", "-safe", "0",
@@ -619,18 +627,19 @@ def main() -> None:
                         str(stitched_path)
                     ]
                     proc2 = subprocess.run(cmd_concat2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                    log.append(proc2.stdout[-2000:])
+                    log.append((proc2.stdout or "")[-2000:])
                     if proc2.returncode != 0:
                         st.error("Concat failed (see logs below).")
                         st.code("\n".join(log[-5:]), language="bash")
                         st.stop()
+            st.success("Concatenation complete ✓")
 
-                # If audio: mux it in
-                final_path = tmp_dir / (final_name if final_name.endswith(".mp4") else f"{final_name}.mp4")
-                if audio_file is not None:
-                    audio_dst = tmp_dir / f"audio{Path(audio_file.name).suffix}"
-                    audio_dst.write_bytes(audio_file.getbuffer())
-                    status.update(label="Adding audio (shortest wins)…")
+            # If audio: mux it in
+            final_path = tmp_dir / (final_name if final_name.endswith(".mp4") else f"{final_name}.mp4")
+            if audio_file is not None:
+                audio_dst = tmp_dir / f"audio{Path(audio_file.name).suffix}"
+                audio_dst.write_bytes(audio_file.getbuffer())
+                with st.spinner("Adding audio…"):
                     cmd_mux = [
                         "ffmpeg", "-y",
                         "-i", str(stitched_path),
@@ -642,15 +651,15 @@ def main() -> None:
                         str(final_path)
                     ]
                     proc = subprocess.run(cmd_mux, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-                    log.append(proc.stdout[-2000:])
+                    log.append((proc.stdout or "")[-2000:])
                     if proc.returncode != 0:
                         st.error("Audio mux failed (see logs below).")
                         st.code("\n".join(log[-5:]), language="bash")
                         st.stop()
-                else:
-                    shutil.move(stitched_path, final_path)
+            else:
+                shutil.move(stitched_path, final_path)
 
-                status.update(label="Done ✓", state="complete")
+            st.success("Final render ready ✓")
 
             # Show + Download
             try:
