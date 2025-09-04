@@ -1,0 +1,27 @@
+{
+  "scene": 1,
+  "act": 2,
+  "input_description": "an elderly man walking down the road with tremors from parkinsons",
+  "generated_prompt": "\"Show a shaky, elderly man in a parka walking along a rural road lined with tall, leafy trees.\". Lighting is sterile and even. The animation style is flat vector illustration, clean geometric lines, minimal shading, stylised anatomy, soft gradients, glowing light effects, futuristic corporate science aesthetic, 2D motion graphics style, medical explainer animation look, crisp edges, Adobe Illustrator and After Effects style.",
+  "created_at": "2025-08-19T15:58:41",
+  "model": "mistral",
+  "options": {
+    "temperature": 0.7,
+    "num_predict": 512
+  },
+  "style_suffix": {
+    "enabled": true,
+    "applied": true,
+    "preset": "2D Animation",
+    "text": "Lighting is sterile and even. The animation style is flat vector illustration, clean geometric lines, minimal shading, stylised anatomy, soft gradients, glowing light effects, futuristic corporate science aesthetic, 2D motion graphics style, medical explainer animation look, crisp edges, Adobe Illustrator and After Effects style."
+  },
+  "length_control": {
+    "max_words": 80,
+    "trimmed": false
+  },
+  "paths": {
+    "raw": "Scenes\\2025-08-19-15-56-52\\scene_1\\act_2.txt",
+    "json": "Prompts\\2025-08-19-15-56-52\\scene_1\\act_2.json",
+    "master": "Prompts\\all_prompts_2025-08-19-15-56-52.jsonl"
+  }
+}
