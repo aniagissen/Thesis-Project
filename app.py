@@ -36,6 +36,9 @@ def main() -> None:
     master_file = init_session_state() # Sets up session logs
 
     st.title("Biomations Prompt Builder")
+    st.subtitle("Here is a quick walkthrough of how to use this app:")
+    st.caption("1. Decide you settings in the sidebar")
+    st.caption("2. Choose ")
     st.caption(f"Master file for this session: **{master_file.name}** → saved in `{master_file.parent}`")
     
     # Set up and render interactive sidebar options
