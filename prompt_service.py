@@ -98,7 +98,7 @@ def generate_style_suffix_from_image(
     )
 
     user = (
-        "Analyze this image to infer its visual *style*. Return a style suffix fit for appending to a prompt—"
+        "Analyse this image to infer its visual *style*. Return a style suffix fit for appending to a prompt—"
         "crisp, comma-separated tokens describing lighting, materials, palette, rendering/animation style, camera/lens, post-processing. "
         "Avoid narration about content; focus on *style*. Keep it compact but useful."
     )
@@ -120,7 +120,6 @@ def generate_style_suffix_from_image(
     except Exception as e:
         raise RuntimeError("Unexpected response while generating style suffix.") from e
 
-    # Normalise + length guard (e.g., cap ~60 words for safety)
     suffix = re.sub(r"\s+", " ", suffix).strip()
     suffix, _ = enforce_word_budget(suffix, 60, protect_suffix=None)  # NEW: clamp
     return suffix
@@ -189,7 +188,6 @@ def generate_prompt_from_desc_and_image(
     if not content:
         raise RuntimeError("Model returned empty content.")
 
-    # Hard cap the sentence length
     content = re.sub(r"\s+", " ", content).strip()
     content, _ = enforce_word_budget(content, int(max_words), protect_suffix=None)
     return content

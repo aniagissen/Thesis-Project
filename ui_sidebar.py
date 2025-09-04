@@ -1,11 +1,10 @@
-# ui_sidebar.py
 from typing import Dict
 from pathlib import Path
 import os
 import streamlit as st
 
 from config import ROOT_PROMPTS
-from prompt_service import generate_style_suffix_from_image  # NEW
+from prompt_service import generate_style_suffix_from_image 
 
 def render_sidebar(default_system: str) -> Dict:
     st.header("Settings")
@@ -13,7 +12,7 @@ def render_sidebar(default_system: str) -> Dict:
     with st.expander("System prompt (advanced)", expanded=False):
         system_prompt = st.text_area("System message sent to the model:", value=default_system, height=180)
 
-    # Primary text model (now defaults to a vision-capable model so you can use one everywhere)
+    # Primary text model
     model_name = st.text_input(
         "Ollama model name",
         value="llama3.2-vision:11b",
@@ -35,9 +34,6 @@ def render_sidebar(default_system: str) -> Dict:
     reset_clicked = st.button("Reset session (new master file)")
     st.divider()
 
-    # ---------- Style ----------
-# ui_sidebar.py — inside render_sidebar()
-
     st.subheader("Style")
 
     style_presets = {
@@ -53,7 +49,6 @@ def render_sidebar(default_system: str) -> Dict:
     }
     style_choice = st.selectbox("Style preset", list(style_presets.keys()), index=0)
 
-    # One-time default for suffix_text; after that, it's user-controlled.
     if "suffix_text" not in st.session_state:
         st.session_state["suffix_text"] = style_presets[style_choice]
 
@@ -62,7 +57,6 @@ def render_sidebar(default_system: str) -> Dict:
         st.session_state["suffix_text"] = style_presets[style_choice]
         st.toast("Applied preset to suffix.")
 
-    # ---- Image → style suffix ----
     st.markdown("**Or build from a reference image**")
     vision_model = st.text_input(
         "Vision model (Ollama)",
@@ -74,12 +68,12 @@ def render_sidebar(default_system: str) -> Dict:
 
     c_img1, c_img2 = st.columns([1,1])
     with c_img1:
-        analyze_clicked = st.button("Analyze image → create suffix", disabled=not use_img_style or (img_file is None))
+        analyse_clicked = st.button("Analyse image → create suffix", disabled=not use_img_style or (img_file is None))
     with c_img2:
         if img_file is not None:
             st.image(img_file, caption="Reference", use_container_width=True)
 
-    if analyze_clicked and img_file is not None:
+    if analyse_clicked and img_file is not None:
         try:
             sid = st.session_state.get("session_timestamp", "session_default")
             save_dir = ROOT_PROMPTS / sid / "style_refs"
@@ -90,7 +84,6 @@ def render_sidebar(default_system: str) -> Dict:
                 f.write(img_file.getbuffer())
 
             suffix = generate_style_suffix_from_image(vision_model, str(img_path))
-            # Overwrite the text area content directly (no preset interference)
             st.session_state["suffix_text"] = suffix
             st.success("Generated style suffix from the image and applied below.")
         except Exception as e:
@@ -103,7 +96,6 @@ def render_sidebar(default_system: str) -> Dict:
 
     st.divider()
 
-    # ---------- Render params ----------
     st.subheader("Render parameters (ComfyUI)")
     override_params = st.checkbox("Override workflow parameters for this batch", value=False, help="If off, your workflow JSON values are used.")
     col1, col2 = st.columns(2)
@@ -136,7 +128,6 @@ def render_sidebar(default_system: str) -> Dict:
         "suffix_text": suffix_text,
         "style_preset": style_choice,
 
-        # vision controls returned just in case you want them in app.py later
         "vision_model": vision_model,
         "use_img_style": use_img_style,
 

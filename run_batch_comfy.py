@@ -232,7 +232,7 @@ def main():
                 if not prompt_text.endswith(('.', '!', '?')):
                     prompt_text += "."
 
-        # Deep copy base workflow so each batch starts from the same template
+        # copy base workflow so each batch starts from the same template
         wf = json.loads(json.dumps(base_workflow))
 
         # Find CLIP node and set text

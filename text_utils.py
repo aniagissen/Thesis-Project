@@ -1,6 +1,6 @@
 import re
 
-def normalize(s: str) -> str:
+def normalise(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
 
 def ensure_suffix(prompt: str, suffix: str) -> tuple[str, bool]:
@@ -8,7 +8,7 @@ def ensure_suffix(prompt: str, suffix: str) -> tuple[str, bool]:
     suf = (suffix or "").strip()
     if not suf:
         return p, False
-    if normalize(suf).lower() in normalize(p).lower():
+    if normalise(suf).lower() in normalise(p).lower():
         return p, False
     if not p.endswith(('.', '!', '?')):
         p = p.rstrip() + "."
@@ -26,8 +26,8 @@ def enforce_word_budget(text: str, max_words: int, protect_suffix: str | None = 
     if len(words) <= mw:
         return text, False
     if protect_suffix:
-        norm_tail = normalize(protect_suffix).lower()
-        norm_text = normalize(text).lower()
+        norm_tail = normalise(protect_suffix).lower()
+        norm_text = normalise(text).lower()
         if norm_text.endswith(norm_tail):
             tail_words = re.findall(r"[\w'-]+", protect_suffix)
             head_budget = max(1, mw - len(tail_words))
