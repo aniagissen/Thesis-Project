@@ -36,9 +36,20 @@ def main() -> None:
     master_file = init_session_state() # Sets up session logs
 
     st.title("Biomations Prompt Builder")
-    st.subtitle("Here is a quick walkthrough of how to use this app:")
-    st.caption("1. Decide you settings in the sidebar")
-    st.caption("2. Choose ")
+    st.subheader("Here is a quick walkthrough of how to use this app, Lets start at the sidebar:")
+    st.caption("1. Ensure the model selcted is correct and the settings are set to how you want")
+    st.caption("2. Input the number of scenes and acts you need ")
+    st.caption("(Only reset the session if you want to start from scratch)")
+    st.caption("3. Choose the style you want and click 'Apply preset")
+    st.caption("4. If you want to create your own style click 'Use image to generate suffix', upload an image you like and click 'Analyse image'")
+    st.caption("5. Change the parameters according to the settings you want")
+    st.caption("6. Now enter your propmts and click 'Generate'")
+    st.caption("If you want to upload a reference image click 'Use reference image for this act' and upload your image before pressing 'Generate'")
+    st.caption("7. Go to 'Batch run prompts in ComfyUI and test your server is running, if not, re run ComfyUI")
+    st.caption("8. Ensure the file paths to your workkflow API JSON and the Batch run script are correct")
+    st.caption("9. Click 'Run bacth prompts now' and wait for them to generate")
+    st.caption("You can then view and download your outputs in the 'Browse ComfyUI outputs' folder")
+    st.caption("You can also edit all you videos together (with the option of uploading some audio) and download it!")
     st.caption(f"Master file for this session: **{master_file.name}** → saved in `{master_file.parent}`")
     
     # Set up and render interactive sidebar options
@@ -50,7 +61,7 @@ def main() -> None:
         st.session_state.clear()
         st.rerun()
 
-    # Reads default from settings and 
+    # Reads default from settings  
     scenes_count = settings["scenes_count"]
     acts_per_scene = settings["acts_per_scene"]
 
@@ -343,12 +354,12 @@ def main() -> None:
                 except Exception as e:
                     st.warning(f"Could not add parameter overrides: {e}")
 
-                # --- Simple streaming status (no WebSocket) ---
+                # Simple spinner
                 start_ts = time.time()
                 with st.spinner("Generating videos…"):
                     info_line = st.empty()
                     current_line = st.empty()
-                    log_box = st.empty()  # will hold st.code(...)
+                    log_box = st.empty()  # will hold st.code
                     lines = []
                     completed = 0
                     total = None
@@ -430,7 +441,7 @@ def main() -> None:
 
                 rc = proc.returncode or 0
                 if rc == 0:
-                    st.success("✅ Batch finished. Check ComfyUI outputs.")
+                    st.success("Batch finished. Check ComfyUI outputs.")
                 else:
                     st.error(f"⚠️ Batch exited with code {rc}. See logs above.")
 
@@ -446,7 +457,7 @@ def main() -> None:
             if st.button("Refresh list"):
                 pass  # rerun refresh
 
-            # Determine N from master JSONL (scene+act -> count)
+            # Determine N from master JSONL (scene+act - count)
             show_n = 0
             if master_file.exists():
                 try:
@@ -503,10 +514,9 @@ def main() -> None:
         except Exception as e:
             st.error(f"Couldn't browse outputs: {e}")
 
-    # --- Build a stitched video + optional audio (FFmpeg) ---
+    # Build a stitched video + optional audio (FFmpeg)
 
     with st.expander("Stitch all videos and add audio"):
-        # Use the same output dir/prefix UX you already have
         default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output"))
         out_dir = st.text_input("ComfyUI output folder", value=default_out)
         prefix_filter = st.text_input("Filename prefix to include (optional)", value="")
@@ -516,14 +526,14 @@ def main() -> None:
         final_name = st.text_input("Final file name", value=f"final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
 
 
-        # For robustness, re-encode every clip to consistent params before concatenation
+        # re-encode every clip to consistent params before concatenation
         target_fps = st.number_input("Target FPS", min_value=1, max_value=120, value=24, step=1)
         crf = st.number_input("Video quality (CRF, lower=better)", min_value=12, max_value=30, value=18, step=1)
 
         go = st.button("Build stitched video")
 
         if go:
-            # Pre-flight: ffmpeg available?
+            # ffmpeg available?
             if not shutil.which("ffmpeg"):
                 st.error("FFmpeg not found on PATH. Install FFmpeg and restart the app.")
                 st.stop()
@@ -566,7 +576,7 @@ def main() -> None:
             tmp_clips = []
             log = []
 
-            # --- Re-encode all clips (safe UI version) ---
+            # Re-encode all clips
             start_ts = time.time()
             with st.spinner("Re-encoding clips…"):
                 prog = st.progress(0, text="Starting…")
@@ -603,7 +613,7 @@ def main() -> None:
 
             st.success("Re-encode complete ✓")
 
-            # Concat via demuxer
+            # Concat
             concat_txt = tmp_dir / "concat.txt"
             concat_txt.write_text("".join([f"file '{c.as_posix()}'\n" for c in tmp_clips]), encoding="utf-8")
             stitched_path = tmp_dir / "_stitched.mp4"
@@ -637,7 +647,7 @@ def main() -> None:
                         st.stop()
             st.success("Concatenation complete ✓")
 
-            # If audio: mux it in
+            # If audio: add it in
             final_path = tmp_dir / (final_name if final_name.endswith(".mp4") else f"{final_name}.mp4")
             if audio_file is not None:
                 audio_dst = tmp_dir / f"audio{Path(audio_file.name).suffix}"
