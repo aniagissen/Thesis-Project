@@ -26,9 +26,9 @@ def render_sidebar(default_system: str) -> Dict:
     st.divider()
 
     scenes_count = st.number_input("How many scenes?", min_value=1, max_value=20, value=3, step=1)
-    acts_per_scene = {}
+    shots_per_scene = {}
     for i in range(1, int(scenes_count) + 1):
-        acts_per_scene[i] = st.number_input(f"Acts in Scene {i}", min_value=1, max_value=20, value=3, step=1, key=f"acts_{i}")
+        shots_per_scene[i] = st.number_input(f"Shots in Scene {i}", min_value=1, max_value=20, value=3, step=1, key=f"shots_{i}")
 
     st.divider()
     reset_clicked = st.button("Reset session (new master file)")
@@ -118,7 +118,7 @@ def render_sidebar(default_system: str) -> Dict:
         "num_predict": num_predict,
         "overwrite_ok": overwrite_ok,
         "scenes_count": int(scenes_count),
-        "acts_per_scene": {int(k): int(v) for k, v in acts_per_scene.items()},
+        "shots_per_scene": {int(k): int(v) for k, v in shots_per_scene.items()},
         "reset_clicked": reset_clicked,
 
         "enable_suffix": enable_suffix,

@@ -241,7 +241,7 @@ def main():
 
         # Build filename label used both for saving and UI
         scene = rec.get("scene")
-        act = rec.get("act")
+        shot = rec.get("shot")
         created = rec.get("created_at")
         dt_date = dt_time = None
         if isinstance(created, str):
@@ -258,8 +258,8 @@ def main():
             dt_date = _time.strftime("%Y%m%d", tt)
             dt_time = _time.strftime("%H%M%S", tt)
 
-        if scene is not None and act is not None:
-            per_prefix = f"Scene{int(scene)}_Act{int(act)}_{dt_date}_{dt_time}"
+        if scene is not None and shot is not None:
+            per_prefix = f"Scene{int(scene)}_Shot{int(shot)}_{dt_date}_{dt_time}"
         else:
             per_prefix = f"{args.prefix}_{i:04d}"
 

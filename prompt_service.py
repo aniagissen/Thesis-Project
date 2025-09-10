@@ -1,7 +1,7 @@
 from text_utils import enforce_word_budget
 
 
-def generate_prompt(model: str, system_msg: str, act_desc: str, *, temperature: float, num_predict: int) -> str:
+def generate_prompt(model: str, system_msg: str, shot_desc: str, *, temperature: float, num_predict: int) -> str:
     try:
         import ollama
     except Exception as e:
@@ -10,8 +10,8 @@ def generate_prompt(model: str, system_msg: str, act_desc: str, *, temperature: 
     messages = [
         {"role": "system", "content": system_msg.strip()},
         {"role": "user", "content": (
-            "Based on the following act description, write one prompt for a text-to-video model.\n\n"
-            f"Act description: \"{act_desc.strip()}\"\n\n"
+            "Based on the following shot description, write one prompt for a text-to-video model.\n\n"
+            f"Shot description: \"{shot_desc.strip()}\"\n\n"
             "Constraints:\n"
             "- Output exactly one sentence (max ~80 words).\n"
             "- Only describe the visuals wanted, clearly and with no fluff.\n"
@@ -128,7 +128,7 @@ def generate_style_suffix_from_image(
 def generate_prompt_from_desc_and_image(
     model: str,
     system_msg: str,
-    act_desc: str,
+    shot_desc: str,
     image_path: str,
     *,
     temperature: float,
@@ -137,7 +137,7 @@ def generate_prompt_from_desc_and_image(
     entity_hint: str = ""
 ) -> str:
     """
-    Uses a vision LLM to read a reference image and the user act description,
+    Uses a vision LLM to read a reference image and the user shot description,
     then produces a SINGLE-SENTENCE prompt (~max_words words), focusing on visuals.
     The optional `entity_hint` disambiguates what the image represents (e.g., “neuron”).
     """
@@ -161,8 +161,8 @@ def generate_prompt_from_desc_and_image(
     )
 
     user = (
-        "Task: Write a single-sentence text-to-video prompt for the following act.\n\n"
-        f"Act description: \"{(act_desc or '').strip()}\"\n"
+        "Task: Write a single-sentence text-to-video prompt for the following shot.\n\n"
+        f"Shot description: \"{(shot_desc or '').strip()}\"\n"
         f"{hint_line}\n"
         "Use the attached image to infer precise look/shape/material/texture/colour of the object(s). "
         "Be concrete and visual (camera angle, motion, setting). Avoid exposition and meta-instructions."

@@ -7,7 +7,7 @@ import sys
 import os
 
 from prompt_service import generate_prompt, generate_prompt_from_desc_and_image  # add second import
-from ui import act_description_input, show_existing_prompt, act_action_buttons, show_generated_output, act_reference_image_controls  # include the new controls
+from ui import shot_description_input, show_existing_prompt, shot_action_buttons, show_generated_output, shot_reference_image_controls  # include the new controls
 
 
 from config import ensure_roots, init_session_state, ROOT_SCENES, ROOT_PROMPTS
@@ -38,13 +38,13 @@ def main() -> None:
     st.title("Biomations Prompt Builder")
     st.subheader("Here is a quick walkthrough of how to use this app, Lets start at the sidebar:")
     st.caption("1. Ensure the model selcted is correct and the settings are set to how you want")
-    st.caption("2. Input the number of scenes and acts you need ")
+    st.caption("2. Input the number of scenes and shots you need ")
     st.caption("(Only reset the session if you want to start from scratch)")
     st.caption("3. Choose the style you want and click 'Apply preset")
     st.caption("4. If you want to create your own style click 'Use image to generate suffix', upload an image you like and click 'Analyse image'")
     st.caption("5. Change the parameters according to the settings you want")
     st.caption("6. Now enter your propmts and click 'Generate'")
-    st.caption("If you want to upload a reference image click 'Use reference image for this act' and upload your image before pressing 'Generate'")
+    st.caption("If you want to upload a reference image click 'Use reference image for this shot' and upload your image before pressing 'Generate'")
     st.caption("7. Go to 'Batch run prompts in ComfyUI and test your server is running, if not, re run ComfyUI")
     st.caption("8. Ensure the file paths to your workkflow API JSON and the Batch run script are correct")
     st.caption("9. Click 'Run bacth prompts now' and wait for them to generate")
@@ -63,43 +63,43 @@ def main() -> None:
 
     # Reads default from settings  
     scenes_count = settings["scenes_count"]
-    acts_per_scene = settings["acts_per_scene"]
+    shots_per_scene = settings["shots_per_scene"]
 
     # Makes/finds folders for scenes and prompts
     for scene_idx in range(1, int(scenes_count) + 1):
         st.subheader(f"Scene {scene_idx}")
         scene_dir, prompt_dir = ensure_scene_dirs(scene_idx)
 
-        for act_idx in range(1, int(acts_per_scene[scene_idx]) + 1):
-            st.markdown(f"**Act {act_idx}**")
-            act_desc = act_description_input(scene_idx, act_idx) # Text box for user inputting prompt per act per scene
-            use_ref, ref_file, ref_entity = act_reference_image_controls(scene_idx, act_idx) 
+        for shot_idx in range(1, int(shots_per_scene[scene_idx]) + 1):
+            st.markdown(f"**Shot {shot_idx}**")
+            shot_desc = shot_description_input(scene_idx, shot_idx) # Text box for user inputting prompt per shot per scene
+            use_ref, ref_file, ref_entity = shot_reference_image_controls(scene_idx, shot_idx) 
 
             # Two file paths for saving outputs
-            raw_txt_path = scene_dir / f"act_{act_idx}.txt"
-            json_path = prompt_dir / f"act_{act_idx}.json"
+            raw_txt_path = scene_dir / f"shot_{shot_idx}.txt"
+            json_path = prompt_dir / f"shot_{shot_idx}.json"
 
             # In case of propmt existing, find and display it
             existing = load_json(json_path)
-            show_existing_prompt(existing, scene_idx, act_idx)
+            show_existing_prompt(existing, scene_idx, shot_idx)
 
-            # Show raw act text
-            gen_clicked, show_raw = act_action_buttons(scene_idx, act_idx)
+            # Show raw shot text
+            gen_clicked, show_raw = shot_action_buttons(scene_idx, shot_idx)
             if show_raw:
-                st.code(act_desc or "(empty)")
+                st.code(shot_desc or "(empty)")
 
             if gen_clicked:
                 # Back up in case no text is entered when pressing 'Generate'
-                if not act_desc or not act_desc.strip():
+                if not shot_desc or not shot_desc.strip():
                     st.warning("Please enter a description before generating.")
                     st.stop()
                 # Back up if prompt has already been genereated. Instructions for how to override
                 if json_path.exists() and not settings["overwrite_ok"]:
-                    st.info("A prompt already exists for this act. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
+                    st.info("A prompt already exists for this shot. Enable 'Overwrite existing prompts' in the sidebar to regenerate.")
                     st.stop()
                 else:
                     try:
-                        raw_txt_path.write_text(act_desc.strip() + "\n", encoding="utf-8")
+                        raw_txt_path.write_text(shot_desc.strip() + "\n", encoding="utf-8")
                     except Exception as e:
                         st.error(f"Failed to write raw description: {e}")
                         st.stop()
@@ -110,7 +110,7 @@ def main() -> None:
                     if use_ref and ref_file is not None:
                         try:
                             sid = st.session_state.get("session_timestamp", "session_default")
-                            save_dir = ROOT_PROMPTS / sid / "act_refs" / f"scene_{scene_idx}_act_{act_idx}"
+                            save_dir = ROOT_PROMPTS / sid / "shot_refs" / f"scene_{scene_idx}_shot_{shot_idx}"
                             save_dir.mkdir(parents=True, exist_ok=True)
                             ext = Path(ref_file.name).suffix or ".png"
                             ref_image_path = save_dir / f"reference{ext}"
@@ -125,7 +125,7 @@ def main() -> None:
                         prompt_text = generate_prompt_from_desc_and_image(
                             model=settings["model_name"],
                             system_msg=settings["system_prompt"],
-                            act_desc=act_desc,
+                            shot_desc=shot_desc,
                             image_path=str(ref_image_path),
                             temperature=settings["temperature"],
                             num_predict=settings["num_predict"],
@@ -137,7 +137,7 @@ def main() -> None:
                         prompt_text = generate_prompt(
                             model=settings["model_name"],
                             system_msg=settings["system_prompt"],
-                            act_desc=act_desc,
+                            shot_desc=shot_desc,
                             temperature=settings["temperature"],
                             num_predict=settings["num_predict"],
                         )
@@ -159,8 +159,8 @@ def main() -> None:
                 # Records everything
                 record = {
                     "scene": scene_idx,
-                    "act": act_idx,
-                    "input_description": act_desc.strip(),
+                    "shot": shot_idx,
+                    "input_description": shot_desc.strip(),
                     "generated_prompt": prompt_text,
                     "created_at": datetime.now().isoformat(timespec="seconds"),
                     "model": settings["model_name"],
@@ -185,7 +185,7 @@ def main() -> None:
 
                 # Confidence check
                 st.success("Prompt generated and saved.")
-                show_generated_output(prompt_text, scene_idx, act_idx)
+                show_generated_output(prompt_text, scene_idx, shot_idx)
 
         st.divider()
 
@@ -230,8 +230,8 @@ def main() -> None:
                                 if settings.get("max_words"):
                                     text, _ = enforce_word_budget(text, int(settings.get("max_words", 0)))
                             scene = obj.get("scene")
-                            act = obj.get("act")
-                            lines.append((ln, scene, act, text))
+                            shot = obj.get("shot")
+                            lines.append((ln, scene, shot, text))
 
                     if dedupe:
                         last = {}
@@ -455,7 +455,7 @@ def main() -> None:
             if st.button("Refresh list"):
                 pass  # rerun refresh
 
-            # Determine N from master JSONL (scene+act - count)
+            # Determine N from master JSONL (scene+shot - count)
             show_n = 0
             if master_file.exists():
                 try:
@@ -470,7 +470,7 @@ def main() -> None:
                             except Exception:
                                 continue
                             sc = obj.get("scene")
-                            ac = obj.get("act")
+                            ac = obj.get("shot")
                             if sc is not None and ac is not None:
                                 last[(sc, ac)] = ln
                     show_n = max(1, len(last))
@@ -518,7 +518,7 @@ def main() -> None:
         default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output"))
         out_dir = st.text_input("ComfyUI output folder", value=default_out)
         prefix_filter = st.text_input("Filename prefix to include (optional)", value="")
-        order = st.selectbox("Order clips by", ["Scene/Act numbers", "Modified time (newest→oldest)", "Filename (A→Z)"], index=0)
+        order = st.selectbox("Order clips by", ["Scene/shot numbers", "Modified time (newest→oldest)", "Filename (A→Z)"], index=0)
 
         audio_file = st.file_uploader("Optional audio (mp3/wav/m4a/aac)", type=["mp3","wav","m4a","aac"])
         final_name = st.text_input("Final file name", value=f"final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
@@ -551,14 +551,14 @@ def main() -> None:
 
             # Sorting strategy
             import re as _re
-            def _scene_act_key(p: Path):
-                # Parse SceneX_ActY if present, else fallback
-                m = _re.search(r"Scene(\d+)_Act(\d+)", p.name, _re.I)
+            def _scene_shot_key(p: Path):
+                # Parse SceneX_ShotY if present, else fallback
+                m = _re.search(r"Scene(\d+)_Shot(\d+)", p.name, _re.I)
                 if m:
                     return (int(m.group(1)), int(m.group(2)), p.name)
                 return (10**9, 10**9, p.name)  # push unknowns to the end
-            if order == "Scene/Act numbers":
-                files.sort(key=_scene_act_key)
+            if order == "Scene/Shot numbers":
+                files.sort(key=_scene_shot_key)
             elif order == "Modified time (newest→oldest)":
                 files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             else:

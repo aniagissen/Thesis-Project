@@ -35,15 +35,15 @@ def load_jsonl(path: Path, key: str = "generated_prompt") -> List[dict]:  # also
                 else:
                     continue
             scene = obj.get("scene") if isinstance(obj.get("scene"), int) else None
-            act = obj.get("act") if isinstance(obj.get("act"), int) else None
+            shot = obj.get("shot") if isinstance(obj.get("shot"), int) else None
             if prompt_text:
-                out.append({"prompt": prompt_text, "scene": scene, "act": act})
+                out.append({"prompt": prompt_text, "scene": scene, "shot": shot})
     else:
         for ln, line in enumerate(raw_lines, 1):
             t = line.strip()
             if not t:
                 continue
-            out.append({"prompt": t, "scene": None, "act": None})
+            out.append({"prompt": t, "scene": None, "shot": None})
 
     if not out:
         raise RuntimeError(f"No prompts found in {path}.")
@@ -170,8 +170,8 @@ def main():
         final_text = _enforce_budget(final_text)
         set_clip_text(clip_node, final_text)
 
-        if item.get("scene") is not None and item.get("act") is not None:
-            prefix = f"{args.prefix}_S{int(item['scene']):02d}_A{int(item['act']):02d}"
+        if item.get("scene") is not None and item.get("shot") is not None:
+            prefix = f"{args.prefix}_S{int(item['scene']):02d}_A{int(item['shot']):02d}"
         else:
             prefix = f"{args.prefix}_{i:04d}"
         set_video_prefix(wf, prefix)
