@@ -205,9 +205,8 @@ def main() -> None:
 
     # Create .txt file from the master JSONL ('generated_prompt')
     if master_file.exists():
-        with st.expander("Export prompts.txt (one per line)"):
-            dedupe = st.checkbox("Dedupe by scene+act (keep latest)", value=True)
-            if st.button("Build prompts.txt"):
+            dedupe = st.checkbox("Remove duplicate prompts", value=True)
+            if st.button("Download Prompts.txt"):
                 try:
                     lines = []
                     with master_file.open("r", encoding="utf-8") as f:
@@ -254,10 +253,9 @@ def main() -> None:
                     st.error(f"Couldn't build prompts.txt: {e}")
 
     # Option for ZIP export for Scenes/ and Prompts/
-    with st.expander("Export Scenes/ and Prompts/ as a ZIP"):
-        if st.button("Create ZIP"):
-            data = create_export_zip(ROOT_SCENES, ROOT_PROMPTS)
-            st.download_button(label="Download export.zip", data=data, file_name="export.zip", mime="application/zip")
+            if st.button("Download ZIP of Scenes and Prompts"):
+                data = create_export_zip(ROOT_SCENES, ROOT_PROMPTS)
+                st.download_button(label="Download export.zip", data=data, file_name="export.zip", mime="application/zip")
 
     
     # Funtion to bacth run the promts in  ComfyUI
@@ -266,19 +264,19 @@ def main() -> None:
         default_prefix = f"Batch_{sid}"
 
         # Takes set scripts unless input changes
-        default_batch = "run_batch_comfy.py"
+        default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
         try:
             from pathlib import Path as _P
             if _P("run_batch_comfy.py").exists():
-                default_batch = "run_batch_comfy.py"
+                default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
             elif _P("run_batch_comfy.py").exists():
-                default_batch = "run_batch_comfy.py"
+                default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
         except Exception:
             pass
 
         # Inputs needed
         batch_script = st.text_input("Batch script path", value=default_batch)
-        workflow_path = st.text_input("Workflow JSON path (API format)", value="")
+        workflow_path = st.text_input("Workflow JSON path (API format)", value="/Users/aniagissen/Documents/GitHub/Thesis-Project/Hunyant2vANIAapi.json")
         server_url = st.text_input("ComfyUI server URL", value="http://127.0.0.1:8188")
         prefix = st.text_input("Filename prefix", value=default_prefix)
         title_filter = st.text_input("CLIP node title filter", value="Positive Prompt")
@@ -412,11 +410,11 @@ def main() -> None:
 
                             elapsed = int(time.time() - start_ts)
                             if total:
-                                info_line.markdown(f"**Status:** {completed}/{total} completed • {elapsed}s elapsed")
+                                info_line.markdown(f"Status: {completed}/{total} completed • {elapsed}s elapsed")
                             else:
-                                info_line.markdown(f"**Status:** starting… • {elapsed}s elapsed")
+                                info_line.markdown(f"Status: starting… • {elapsed}s elapsed")
                             if current_label:
-                                current_line.write(f"**Current:** {current_label}")
+                                current_line.write(f"Current: {current_label}")
 
                             log_box.code("\n".join(lines[-400:]), language="bash")
 
@@ -449,8 +447,8 @@ def main() -> None:
     # Browse ComfyUI outputs in streamlit
     with st.expander("Browse your ComfyUI outputs"):
         try:
-            default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output")) #Change folder to users liking
-            out_dir = st.text_input("Output folder", value=default_out, help="Path where ComfyUI saves outputs (videos).")
+            default_out = st.session_state.get("comfy_output_dir", str(Path("/Users/aniagissen/Documents/UAL/Thesis/ComfyUI/output"))) #Change folder to users liking
+            out_dir = st.text_input("Output folder (Enter the direct file path to ComfyUI outputs)", value=default_out, help="Path where ComfyUI saves outputs (videos).")
             st.session_state.comfy_output_dir = out_dir
 
             show_prefix = st.text_input("Filter by filename prefix (optional)", value="", help="Use the same prefix you batch with to narrow results.")

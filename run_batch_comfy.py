@@ -5,7 +5,7 @@ Usage:
   python run_batch_comfy.py --workflow Hunyuan_API.json --jsonl all_prompts.jsonl \
       --server http://127.0.0.1:8188 --prefix MyBatch --wait
 """
-import argparse, json, time, uuid
+import argparse, json, time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
@@ -103,7 +103,7 @@ def set_video_prefix(workflow: Dict[str, Any], prefix: str) -> None:
             # assume first widget is filename_prefix for VHS_VideoCombine in UI export
             w[0] = prefix
 
-# Override helpers
+# Override values
 def set_scheduler_steps(workflow: Dict[str, Any], steps: Optional[int]) -> None:
     if steps is None: return
     if is_api_prompt(workflow):

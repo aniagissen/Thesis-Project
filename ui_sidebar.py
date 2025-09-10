@@ -42,9 +42,6 @@ def render_sidebar(default_system: str) -> Dict:
                         "medical explainer animation look, crisp edges, Adobe Illustrator and After Effects style"),
         "3D Realistic": ("Photorealistic CGI render, physically based materials, naturalistic global illumination, shallow depth of field, "
                         "cinematic color grade, ray-traced reflections, detailed textures"),
-        "Documentary Realism": ("Natural handheld camerawork, practical lighting, neutral color grade, true-to-life textures, ambient room tone, "
-                                "unobtrusive visual style"),
-        "Sketch/Storyboard": ("Monochrome pencil sketch style, rough crosshatching, loose gesture lines, storyboard frame aesthetic, minimal shading"),
         "None (start blank)": ""
     }
     style_choice = st.selectbox("Style preset", list(style_presets.keys()), index=0)
@@ -57,7 +54,7 @@ def render_sidebar(default_system: str) -> Dict:
         st.session_state["suffix_text"] = style_presets[style_choice]
         st.toast("Applied preset to suffix.")
 
-    st.markdown("**Or build from a reference image**")
+    st.markdown("Or build from a reference image")
     vision_model = st.text_input(
         "Vision model (Ollama)",
         value=model_name,
@@ -96,7 +93,7 @@ def render_sidebar(default_system: str) -> Dict:
 
     st.divider()
 
-    st.subheader("Render parameters (ComfyUI)")
+    st.subheader("Render parameters in ComfyUI")
     override_params = st.checkbox("Override workflow parameters for this batch", value=False, help="If off, your workflow JSON values are used.")
     col1, col2 = st.columns(2)
     with col1:

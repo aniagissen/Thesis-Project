@@ -27,7 +27,7 @@ def act_reference_image_controls(scene_idx: int, act_idx: int) -> Tuple[bool, Op
 
 def act_description_input(scene_idx: int, act_idx: int, *, key_prefix: str = "") -> str:
     key = key_prefix or f"desc_{scene_idx}_{act_idx}"
-    return st.text_area("Short description", key=key, height=90, placeholder="e.g., A doctor walks through a neon-lit corridor...")
+    return st.text_area("Short description", key=key, height=90, placeholder="e.g., A doctor walks through a hosptial corridor...")
 
 def show_existing_prompt(existing: Optional[Dict[str, Any]], scene_idx: int, act_idx: int) -> None:
     if existing and "generated_prompt" in existing:
