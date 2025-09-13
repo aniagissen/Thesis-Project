@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-
-"""
-Batch-run a ComfyUI workflow for each prompt in a JSONL file.
-
-Usage:
-  python run_batch_comfy.py --workflow Hunyant2vANIA.json --jsonl all_prompts.jsonl \
-      --server http://127.0.0.1:8000 --prefix MyBatch --wait
-
-What it does:
-- Loads the workflow JSON
-- For each prompt in JSONL (expects key "generated_prompt"), it sets the text of the node named
-  "CLIP Text Encode (Positive Prompt)" (type "CLIPTextEncode"), updates the video filename prefix,
-  and POSTs the workflow to ComfyUI's /prompt endpoint.
-- Optionally waits for each job to complete and prints the output file info.
-
-Requirements:
-  pip install requests
-  Start ComfyUI with API enabled (default on: http://127.0.0.1:8000) 
-"""
 import argparse
 import json
 import time
@@ -39,9 +19,7 @@ def load_jsonl(path: Path, key: str = "generated_prompt") -> List[str]:
             except json.JSONDecodeError:
                 raise RuntimeError(f"Line {i} in {path} is not valid JSONL.")
             if key not in obj or not str(obj[key]).strip():
-                # allow fallback to pure text lines if the file is a simple .txt
                 if len(obj) == 1:
-                    # single key, take its value
                     v = next(iter(obj.values()))
                     if v:
                         prompts.append(str(v).strip())
@@ -60,7 +38,6 @@ def load_workflow(path: Path) -> Dict[str, Any]:
 
 
 def is_api_prompt(workflow: Dict[str, Any]) -> bool:
-    # API prompt: dict keyed by node ids, each a dict with 'class_type' and 'inputs'
     return isinstance(workflow, dict) and "nodes" not in workflow and all(
         isinstance(v, dict) and ("class_type" in v and "inputs" in v) for v in workflow.values()
     )
@@ -120,7 +97,6 @@ def queue_prompt(server: str, workflow: Dict[str, Any], client_id: str) -> str:
     r = requests.post(url, json=payload, timeout=60)
     r.raise_for_status()
     data = r.json()
-    # ComfyUI returns either {"prompt_id": "..."} or a dict with "prompt_id" under "data"
     prompt_id = data.get("prompt_id") or data.get("data", {}).get("prompt_id")
     if not prompt_id:
         raise RuntimeError(f"Unexpected /prompt response: {data}")
@@ -139,7 +115,6 @@ def wait_for_completion(server: str, prompt_id: str, poll_s: float = 2.0, timeou
         r = requests.get(url, timeout=30)
         if r.status_code == 200:
             hist = r.json()
-            # Expect shape: { "prompt_id": { "status": {...}, "outputs": {...} } }
             if prompt_id in hist:
                 status = hist[prompt_id].get("status", {})
                 if status.get("completed") or status.get("status_str") in {"success", "completed"}:
@@ -174,7 +149,7 @@ def main():
     print(f"Queuing {len(prompts)} jobs to {args.server}")
 
     for i, prompt_text in enumerate(prompts, 1):
-        wf = json.loads(json.dumps(base_workflow))  # deep copy via JSON
+        wf = json.loads(json.dumps(base_workflow))  
         clip_node = find_node(wf, "CLIPTextEncode", title_contains=args.title_filter)
         set_clip_text(wf, clip_node, prompt_text)
 
