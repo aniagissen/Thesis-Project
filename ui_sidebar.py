@@ -1,7 +1,6 @@
 from typing import Dict
 import streamlit as st
 
-# ---- Style presets ----
 STYLE_PRESETS = {
     "2D Animation": (
         "Lighting is sterile and even. The animation style is flat vector illustration, clean geometric lines, "
@@ -57,7 +56,6 @@ def render_sidebar(default_system: str) -> Dict:
     st.divider()
     reset_clicked = st.button("Reset session (new master file)")
 
-    # ---- Style suffix controls ----
     st.divider()
     st.subheader("Style suffix")
     enable_suffix = st.checkbox("Append style suffix to every prompt", value=True)
@@ -69,7 +67,6 @@ def render_sidebar(default_system: str) -> Dict:
         help="Pick a preset; you can still edit the text below."
     )
 
-    # Persist user's edits unless the preset changes
     if "style_choice" not in st.session_state:
         st.session_state.style_choice = style_choice
     if "suffix_text" not in st.session_state:
@@ -86,7 +83,6 @@ def render_sidebar(default_system: str) -> Dict:
         disabled=not enable_suffix
     )
 
-    # ---- Length control ----
     st.divider()
     st.subheader("Length control")
     max_words = st.slider(
