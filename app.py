@@ -13,7 +13,6 @@ from ui_sidebar import render_sidebar
 from ui import act_description_input, show_existing_prompt, act_action_buttons, show_generated_output
 from text_utils import ensure_suffix, enforce_word_budget
 
-# System prompt
 DEFAULT_SYSTEM = (
     "You are a prompt engineer generating clean and clear video prompts "
     "for the Hunyuan text-to-video model in ComfyUI. Each output must be a single, "
