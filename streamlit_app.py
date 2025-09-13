@@ -1,6 +1,3 @@
-"""Streamlit UI for the thesis MVP. Single-process, no external services required."""
-from __future__ import annotations
-
 import io
 import json
 import os
@@ -20,30 +17,23 @@ from core.match import clip_match
 from core.models import SentenceItem, VisualPlan
 from core.planning import plan_visual_for_sentence
 from core.text import split_scenes, split_sentences
-from core.tts import synth_tts  # returns (path, duration)
+from core.tts import synth_tts 
 
-# Optional Comfy bridge + single-file ingest (guard if not present yet)
 HAVE_COMFY = True
 try:
     from core.comfy import submit_comfy_generation
-    from core.ingest_one import ingest_one  # if you haven't created this yet, HAVE_COMFY becomes False
+    from core.ingest_one import ingest_one  
 except Exception:
     HAVE_COMFY = False
 
-# -----------------------------
-# Config & data index
-# -----------------------------
 st.set_page_config(page_title="Thesis MVP – Medical Animation Editor", layout="wide")
-ROOT = Path(__file__).resolve().parent      # Thesis-Project/
+ROOT = Path(__file__).resolve().parent   
 DATA_DIR = ROOT / "data"
 df, VECTORS, ID_INDEX = load_index(str(DATA_DIR))
 
 st.title("Medical Animation Editor – Thesis MVP (Clean Version)")
 st.sidebar.caption(f"Index loaded: {len(df)} clips · vecs {getattr(VECTORS, 'shape', None)} · ids {len(ID_INDEX)}")
 
-# -----------------------------
-# PDF → script helpers (Ollama)
-# -----------------------------
 OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
@@ -52,7 +42,6 @@ def extract_pdf_text(file_bytes: bytes) -> str:
     from pdfminer.high_level import extract_text
     with io.BytesIO(file_bytes) as f:
         text = extract_text(f) or ""
-    # compact whitespace; keep paragraphs
     lines = [ln.strip() for ln in text.splitlines()]
     return "\n".join(ln for ln in lines if ln)
 
@@ -66,7 +55,7 @@ def generate_script_with_ollama(
     """Ask Ollama to write 8–14 scene paragraphs. Each scene must be a separate paragraph."""
     if not paper_text.strip():
         return ""
-    source = paper_text[:120_000]  # cap input
+    source = paper_text[:120_000] 
 
     prompt = f"""
 You are an educational medical narrator.
@@ -103,9 +92,6 @@ OUTPUT:
     except Exception:
         return ""
 
-# -----------------------------
-# Sidebar inputs
-# -----------------------------
 with st.sidebar:
     st.header("Inputs")
     demographics = st.text_input("Demographics", value="Adults, non-specialists")
@@ -115,9 +101,7 @@ with st.sidebar:
     THRESH = st.slider("Min similarity (τ)", 0.00, 0.60, 0.28, 0.01)
     st.caption("This MVP uses stubs for TTS and visual planning. Replace with real engines as you iterate.")
 
-# -----------------------------
-# Session state (use dict keys, not attribute annotations)
-# -----------------------------
+
 if "scenes" not in st.session_state:
     st.session_state["scenes"] = []
 if "sentences" not in st.session_state:
@@ -125,9 +109,7 @@ if "sentences" not in st.session_state:
 if "edl" not in st.session_state:
     st.session_state["edl"] = {"video": [], "audio": []}
 
-# -----------------------------
-# Step 1–2: Create the script
-# -----------------------------
+
 st.subheader("Step 1–2: Create the script")
 tab_manual, tab_pdf = st.tabs(["Manual", "From PDF"])
 
@@ -212,7 +194,6 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
 
             col_tts, col_plan, col_match = st.columns([1, 1, 2])
 
-            # ---- TTS ----
             with col_tts:
                 if st.button("Generate TTS", key=f"tts-{item.id}"):
                     path, dur = synth_tts(base_dir=".cache/tts", voice_id=voice_id, text=item.text)
@@ -223,7 +204,6 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
                 if item.tts_path:
                     st.caption(os.path.basename(item.tts_path))
 
-            # ---- Visual Planning ----
             with col_plan:
                 if st.button("Plan Visual", key=f"plan-{item.id}"):
                     vp = plan_visual_for_sentence(item.text, sensitivity)
@@ -231,7 +211,6 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
                 if item.visual_plan:
                     st.json(item.visual_plan)
 
-            # ---- Retrieval & Accept / Reject ----
             with col_match:
                 if item.visual_plan:
                     takes = clip_match(VisualPlan(**item.visual_plan), df, VECTORS, ID_INDEX, k=TOP_K_MATCHES)
@@ -258,7 +237,6 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
                 else:
                     st.info("Click 'Plan Visual' to see matches.")
 
-            # ---- Reject → Generate via ComfyUI (optional) ----
             with st.expander("No good match? Generate with ComfyUI"):
                 if not HAVE_COMFY:
                     st.info("ComfyUI bridge not available. Create core/comfy.py and core/ingest_one.py to enable this.")
@@ -271,9 +249,7 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
                             plan = item.visual_plan or asdict(plan_visual_for_sentence(item.text, sensitivity))
                             video_path = submit_comfy_generation(plan, STYLE_SUFFIXES[style_id], seed=seed, steps=steps, seconds=plan.get("duration_s", 6.0))
                             st.success(f"ComfyUI done: {Path(video_path).name}")
-                            # ingest back into index
                             df, VECTORS, ID_INDEX = ingest_one(Path(video_path), Path("assets"), df, VECTORS, ID_INDEX)
-                            # offer as a new take immediately
                             t = {
                                 "source": "comfy",
                                 "clip_id": ID_INDEX[-1],
@@ -288,9 +264,7 @@ for i, _ in enumerate(st.session_state.get("scenes", [])):
                         except Exception as e:
                             st.error(f"ComfyUI generation failed: {e}")
 
-# -----------------------------
-# Build EDL & optional render
-# -----------------------------
+
 st.markdown("---")
 st.subheader("Build and download EDL")
 
