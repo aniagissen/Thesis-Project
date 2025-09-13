@@ -1,13 +1,10 @@
-# core/ingest_one.py
-from __future__ import annotations
 from pathlib import Path
 import json, numpy as np, pandas as pd
-from .ingest_utils import ffprobe_metadata, sha256_file, extract_keyframes, embed_keyframes  # factor these from your script
+from .ingest_utils import ffprobe_metadata, sha256_file, extract_keyframes, embed_keyframes  
 
 def ingest_one(src: Path, assets_root: Path, df: pd.DataFrame, vecs: np.ndarray, ids: list[str]) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
     assets_root = assets_root.resolve()
     assets_root.mkdir(parents=True, exist_ok=True)
-    # move/copy into assets if needed
     dst = assets_root / src.name
     if src.resolve() != dst.resolve():
         dst.write_bytes(src.read_bytes())
@@ -25,10 +22,9 @@ def ingest_one(src: Path, assets_root: Path, df: pd.DataFrame, vecs: np.ndarray,
     resolution = f"{w}x{h}" if w and h else None
     aspect = (float(w)/float(h)) if w and h and float(h) else None
 
-    # keyframes + embedding
     kf_dir = Path("data/keyframes") / checksum[:8]
     frames = extract_keyframes(dst, kf_dir, max_frames=12, size=224)
-    emb = embed_keyframes(*load_clip_model(), frames)  # or import model/preprocess/device elsewhere
+    emb = embed_keyframes(*load_clip_model(), frames) 
 
     row = {
         "id": checksum[:16], "uri": dst.name, "title": dst.stem, "description":"", "source":"comfy",
@@ -41,7 +37,6 @@ def ingest_one(src: Path, assets_root: Path, df: pd.DataFrame, vecs: np.ndarray,
     df2 = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     vecs2 = np.vstack([vecs, emb[None, :]])
     ids2 = ids + [row["id"]]
-    # persist
     df2.to_parquet("data/library.parquet", index=False)
     np.save("data/vectors.npy", vecs2)
     json.dump(ids2, open("data/id_index.json","w"))
