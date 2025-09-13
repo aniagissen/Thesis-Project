@@ -6,8 +6,8 @@ import subprocess
 import sys
 import os
 
-from prompt_service import generate_prompt, generate_prompt_from_desc_and_image  # add second import
-from ui import shot_description_input, show_existing_prompt, shot_action_buttons, show_generated_output, shot_reference_image_controls  # include the new controls
+from prompt_service import generate_prompt, generate_prompt_from_desc_and_image 
+from ui import shot_description_input, show_existing_prompt, shot_action_buttons, show_generated_output, shot_reference_image_controls 
 
 
 from config import ensure_roots, init_session_state, ROOT_SCENES, ROOT_PROMPTS
@@ -34,7 +34,7 @@ DEFAULT_SYSTEM = (
 def main() -> None:
     ensure_roots() # Locates root folders
     master_file = init_session_state() # Sets up session logs
-
+    # Instructions
     st.title("Biomations Prompt Builder")
     st.subheader("Here is a quick walkthrough of how to use this app, Lets start at the sidebar:")
     st.caption("1. Ensure the model selcted is correct and the settings are set to how you want")
@@ -52,7 +52,7 @@ def main() -> None:
     st.caption("You can also edit all you videos together (with the option of uploading some audio) and download it!")
     st.caption(f"Master file for this session: **{master_file.name}** → saved in `{master_file.parent}`")
     
-    # Set up and render interactive sidebar options
+    # Set up sidebar 
     with st.sidebar:
         settings = render_sidebar(DEFAULT_SYSTEM)
 
@@ -121,7 +121,7 @@ def main() -> None:
                             ref_image_path = None
 
                     if ref_image_path:
-                        # Vision model: use the same model_name (llama3.2-vision:11b) or expose a separate setting if you prefer
+                        # use the same model_name (llama3.2-vision:11b) or expose a separate setting if you prefer
                         prompt_text = generate_prompt_from_desc_and_image(
                             model=settings["model_name"],
                             system_msg=settings["system_prompt"],
@@ -352,7 +352,7 @@ def main() -> None:
                 except Exception as e:
                     st.warning(f"Could not add parameter overrides: {e}")
 
-                # Simple spinner
+                # spinner
                 start_ts = time.time()
                 with st.spinner("Generating videos…"):
                     info_line = st.empty()
@@ -426,7 +426,7 @@ def main() -> None:
 
                         time.sleep(0.05)
 
-                # Save logs if requested (unchanged)
+                # Save logs if requested 
                 if save_logs:
                     try:
                         sid = st.session_state.get("session_timestamp", "session_default")
@@ -447,7 +447,7 @@ def main() -> None:
     # Browse ComfyUI outputs in streamlit
     with st.expander("Browse your ComfyUI outputs"):
         try:
-            default_out = st.session_state.get("comfy_output_dir", str(Path("/Users/aniagissen/Documents/UAL/Thesis/ComfyUI/output"))) #Change folder to users liking
+            default_out = st.session_state.get("comfy_output_dir", str(Path("/Users/aniagissen/Documents/UAL/Thesis/ComfyUI/output"))) #Change folder to users liking in app
             out_dir = st.text_input("Output folder (Enter the direct file path to ComfyUI outputs)", value=default_out, help="Path where ComfyUI saves outputs (videos).")
             st.session_state.comfy_output_dir = out_dir
 
@@ -512,8 +512,7 @@ def main() -> None:
         except Exception as e:
             st.error(f"Couldn't browse outputs: {e}")
 
-    # Build a stitched video + optional audio (FFmpeg)
-
+    # Build a stitched video + optional audio 
     with st.expander("Stitch all videos and add audio"):
         default_out = st.session_state.get("comfy_output_dir", str(Path.home() / "ComfyUI" / "output"))
         out_dir = st.text_input("ComfyUI output folder", value=default_out)
