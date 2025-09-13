@@ -1,6 +1,4 @@
-"""Text utilities: hashing, scene and sentence splitting."""
-from __future__ import annotations
-
+# XXX finish afer test
 import hashlib
 import re
 from typing import List
@@ -23,13 +21,12 @@ def split_sentences(text: str) -> List[str]:
     This is intentionally conservative for medical text.
     """
     try:
-        import spacy  # type: ignore
-        nlp = spacy.load("en_core_web_sm", disable=["ner", "tagger"])  # light pipeline
+        import spacy  
+        nlp = spacy.load("en_core_web_sm", disable=["ner", "tagger"])
         nlp.add_pipe("sentencizer")
         sentences = [s.text.strip() for s in nlp(text).sents if s.text.strip()]
         return sentences
     except Exception:
         rx = re.compile(SENTENCE_REGEX)
         parts = [s.strip() for s in rx.split(text) if s.strip()]
-        # Ensure trailing punctuation so TTS doesn’t run on
         return [p if p[-1:] in ".?!" else p + "." for p in parts]
