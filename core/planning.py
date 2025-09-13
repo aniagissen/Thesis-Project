@@ -1,5 +1,3 @@
-# core/planning.py
-from __future__ import annotations
 import os, requests
 from pydantic import BaseModel, Field, ValidationError
 from typing import List
@@ -15,9 +13,9 @@ class VisualPlanSchema(BaseModel):
     visual_level: str               # "schematic" | "realistic" | "iconographic"
     color_style: str                # "clinical" | "cool" | "warm"
     avoid: List[str] = Field(default_factory=list)
-    duration_s: float               # 4–8 ideally
+    duration_s: float             
     keywords: List[str] = Field(default_factory=list)
-    sensitivity: str                # "low" | "medium" | "high"
+    sensitivity: str               
 
 def plan_visual_for_sentence(sentence: str, sensitivity: str = "medium") -> VisualPlan:
     prompt = (
@@ -37,7 +35,6 @@ def plan_visual_for_sentence(sentence: str, sensitivity: str = "medium") -> Visu
         data = r.json().get("response", "{}")
         parsed = VisualPlanSchema.model_validate_json(data)
     except Exception:
-        # safe fallback if LLM fails
         parsed = VisualPlanSchema(
             shot_type="diagram" if sensitivity == "low" else "explainer",
             primary_subject="medical subject",
@@ -49,7 +46,6 @@ def plan_visual_for_sentence(sentence: str, sensitivity: str = "medium") -> Visu
             keywords=["mechanism"],
             sensitivity=sensitivity,
         )
-    # clamp duration to 4..8
     d = max(4.0, min(8.0, float(parsed.duration_s)))
     parsed.duration_s = d
     return VisualPlan(**parsed.model_dump())
