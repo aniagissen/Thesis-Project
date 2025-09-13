@@ -1,6 +1,3 @@
-"""Load and manage the local clip library. Replace with your indexed bank."""
-from __future__ import annotations
-
 import os
 import json
 import numpy as np
