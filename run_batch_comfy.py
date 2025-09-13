@@ -1,10 +1,3 @@
-"""
-Batch-run a ComfyUI workflow for each prompt in a JSONL file.
-
-Usage:
-  python run_batch_comfy.py --workflow Hunyuan_API.json --jsonl all_prompts.jsonl \
-      --server http://127.0.0.1:8188 --prefix MyBatch --wait
-"""
 import argparse, json, time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
