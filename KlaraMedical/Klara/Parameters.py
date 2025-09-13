@@ -2,7 +2,6 @@ import numpy as np
 import cv2
 
 class MedicalParamOptimizerNode:
-    """Optimizes parameters based on input image complexity."""
     CATEGORY = "KlaraMedical"
 
     @classmethod
@@ -47,7 +46,6 @@ class MedicalParamOptimizerNode:
 
         return (cfg, steps, flow_shift)
 
-# ✅ Register this node
 NODE_CLASS_MAPPINGS = {
     "MedicalParamOptimizerNode": MedicalParamOptimizerNode,
 }
