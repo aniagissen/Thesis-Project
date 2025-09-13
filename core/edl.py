@@ -1,4 +1,3 @@
-"""EDL (Edit Decision List) helpers."""
 from __future__ import annotations
 
 from typing import Dict, List, Tuple
@@ -7,7 +6,6 @@ from .models import SentenceItem
 
 
 def build_edl(sentences_by_scene: Dict[str, List[SentenceItem]]) -> Dict[str, List[Dict]]:
-    """Create a simple EDL with video and audio events in sequence."""
     edl_v: List[Dict] = []
     edl_a: List[Dict] = []
     t_cursor = 0.0
