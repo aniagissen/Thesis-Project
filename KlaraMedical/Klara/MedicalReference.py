@@ -3,7 +3,6 @@ import numpy as np
 from PIL import Image
 
 class MedicalReferenceNode:
-    """Loads a folder of medical images and selects one or blends them."""
     CATEGORY = "KlaraMedical"
 
     @classmethod
@@ -30,9 +29,8 @@ class MedicalReferenceNode:
             avg_img = np.mean(stacked, axis=0).astype(np.uint8)
             return (avg_img,)
         else:
-            return (images[0],)  # default: return the first image
+            return (images[0],) 
 
-# ✅ Register this node
 NODE_CLASS_MAPPINGS = {
     "MedicalReferenceNode": MedicalReferenceNode,
 }
