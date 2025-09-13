@@ -1,4 +1,3 @@
-# core/comfy.py
 from __future__ import annotations
 import os, time, json, requests
 from pathlib import Path
@@ -22,7 +21,6 @@ def poll_result(prompt_id: str, wait_s: int = 2, timeout_s: int = 600) -> Dict:
     raise TimeoutError("ComfyUI job timeout")
 
 def build_prompt_from_plan(plan: Dict, style_suffix: str) -> str:
-    # Simple textual prompt; adjust to your model
     parts = [
         plan.get("shot_type",""),
         plan.get("visual_level",""),
@@ -56,8 +54,6 @@ def submit_comfy_generation(plan: Dict, style_suffix: str, seed: int = 1234, ste
     prompt_id = post_workflow(wf_payload)
     result = poll_result(prompt_id)
 
-    # find the first video file path in result
-    # Each history item typically contains an "outputs" dict; adapt if yours differs
     out_path = None
     for _, item in result.items():
         for node in item.get("outputs", {}).values():
