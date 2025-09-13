@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""
-Batch-run a ComfyUI workflow for each prompt in a JSONL or TXT file.
-"""
 import argparse, json, time, uuid, re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
