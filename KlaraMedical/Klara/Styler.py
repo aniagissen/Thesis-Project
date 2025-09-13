@@ -2,7 +2,6 @@ import numpy as np
 from PIL import Image
 
 class MedicalStylerNode:
-    """Applies optional style blending to an input image."""
     CATEGORY = "KlaraMedical"
 
     @classmethod
@@ -23,7 +22,6 @@ class MedicalStylerNode:
         styled = np.clip(styled, 0, 255).astype(np.uint8)
         return (styled,)
 
-# ✅ Register this node
 NODE_CLASS_MAPPINGS = {
     "MedicalStylerNode": MedicalStylerNode,
 }
