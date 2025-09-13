@@ -264,19 +264,19 @@ def main() -> None:
         default_prefix = f"Batch_{sid}"
 
         # Takes set scripts unless input changes
-        default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
+        default_batch = "run_batch_comfy.py"
         try:
             from pathlib import Path as _P
             if _P("run_batch_comfy.py").exists():
-                default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
+                default_batch = "run_batch_comfy.py"
             elif _P("run_batch_comfy.py").exists():
-                default_batch = "/Users/aniagissen/Documents/GitHub/Thesis-Project/run_batch_comfy.py"
+                default_batch = "run_batch_comfy.py"
         except Exception:
             pass
 
         # Inputs needed
         batch_script = st.text_input("Batch script path", value=default_batch)
-        workflow_path = st.text_input("Workflow JSON path (API format)", value="/Users/aniagissen/Documents/GitHub/Thesis-Project/Hunyant2vANIAapi.json")
+        workflow_path = st.text_input("Workflow JSON path (API format)", value="Hunyant2vANIAapi.json")
         server_url = st.text_input("ComfyUI server URL", value="http://127.0.0.1:8188")
         prefix = st.text_input("Filename prefix", value=default_prefix)
         title_filter = st.text_input("CLIP node title filter", value="Positive Prompt")
@@ -447,7 +447,7 @@ def main() -> None:
     # Browse ComfyUI outputs in streamlit
     with st.expander("Browse your ComfyUI outputs"):
         try:
-            default_out = st.session_state.get("comfy_output_dir", str(Path("/Users/aniagissen/Documents/UAL/Thesis/ComfyUI/output"))) #Change folder to users liking in app
+            default_out = st.session_state.get("comfy_output_dir", str(Path("ComfyUI/output"))) #Change folder to users liking in app
             out_dir = st.text_input("Output folder (Enter the direct file path to ComfyUI outputs)", value=default_out, help="Path where ComfyUI saves outputs (videos).")
             st.session_state.comfy_output_dir = out_dir
 
